@@ -1,21 +1,21 @@
 "use client";
 
-import React, { useRef, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { CanvasProvider, useCanvas } from "@/contexts";
 import { MainLayout } from "@/components/layout";
 import { ApiKeyManager } from "@/components/settings";
-import { ExcalidrawWrapper, ExcalidrawWrapperRef } from "@/components/canvas";
+import { ExcalidrawWrapper } from "@/components/canvas";
 
-export default function Home() {
+function HomeContent() {
   const [showSettings, setShowSettings] = useState(false);
-  const canvasRef = useRef<ExcalidrawWrapperRef>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { canvasRef, setSelectedElements } = useCanvas();
 
   const handleSelectionChange = useCallback((ids: string[]) => {
-    setSelectedIds(ids);
+    setSelectedElements(ids);
     if (ids.length > 0) {
       console.log("Selected elements:", ids);
     }
-  }, []);
+  }, [setSelectedElements]);
 
   return (
     <>
@@ -30,5 +30,13 @@ export default function Home() {
         <ApiKeyManager onClose={() => setShowSettings(false)} />
       )}
     </>
+  );
+}
+
+export default function Home() {
+  return (
+    <CanvasProvider>
+      <HomeContent />
+    </CanvasProvider>
   );
 }

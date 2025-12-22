@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ExportButton, ImportButton } from "@/components/toolbar";
 
 interface HeaderProps {
   onSettingsClick?: () => void;
@@ -16,7 +17,12 @@ export function Header({ onSettingsClick }: HeaderProps) {
         </span>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
+        <ImportButton />
+        <ExportButton />
+
+        <div className="w-px h-6 bg-slate-700 mx-2" />
+
         <button
           onClick={onSettingsClick}
           className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
