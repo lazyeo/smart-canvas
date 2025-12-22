@@ -1,15 +1,23 @@
 /**
  * API Key 管理模块
- * 管理 LLM Provider 的 API Keys
+ * 管理 LLM Provider 的 API Keys 和自定义 Base URL
  */
 
-import { getItem, setItem, removeItem } from "./local-storage";
+import { getItem, setItem } from "./local-storage";
 
 export type LLMProvider = "openai" | "anthropic" | "gemini";
+
+// 默认 API Base URL
+const DEFAULT_BASE_URLS: Record<LLMProvider, string> = {
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com",
+    gemini: "https://generativelanguage.googleapis.com/v1beta",
+};
 
 interface ApiKeyConfig {
     provider: LLMProvider;
     key: string;
+    baseUrl: string;  // 添加 baseUrl 字段
     createdAt: number;
 }
 
@@ -21,6 +29,13 @@ interface ApiKeysStore {
 const API_KEYS_STORAGE_KEY = "api_keys";
 
 /**
+ * 获取 Provider 的默认 Base URL
+ */
+export function getDefaultBaseUrl(provider: LLMProvider): string {
+    return DEFAULT_BASE_URLS[provider];
+}
+
+/**
  * 获取所有已保存的 API Keys 配置
  */
 export function getApiKeysConfig(): ApiKeysStore {
@@ -28,13 +43,22 @@ export function getApiKeysConfig(): ApiKeysStore {
     if (stored === null) {
         return { keys: [], activeProvider: null };
     }
-    return stored;
+    // 兼容旧数据：为没有 baseUrl 的配置添加默认值
+    const migratedKeys = stored.keys.map((k) => ({
+        ...k,
+        baseUrl: k.baseUrl || DEFAULT_BASE_URLS[k.provider],
+    }));
+    return { ...stored, keys: migratedKeys };
 }
 
 /**
- * 保存 API Key
+ * 保存 API Key（支持自定义 Base URL）
  */
-export function saveApiKey(provider: LLMProvider, key: string): boolean {
+export function saveApiKey(
+    provider: LLMProvider,
+    key: string,
+    baseUrl?: string
+): boolean {
     const config = getApiKeysConfig();
 
     // 查找是否已存在该 Provider 的 Key
@@ -43,6 +67,7 @@ export function saveApiKey(provider: LLMProvider, key: string): boolean {
     const newKeyConfig: ApiKeyConfig = {
         provider,
         key,
+        baseUrl: baseUrl || DEFAULT_BASE_URLS[provider],
         createdAt: Date.now(),
     };
 
@@ -75,20 +100,50 @@ export function getApiKey(provider: LLMProvider): string | null {
 }
 
 /**
- * 获取当前活跃 Provider 的 API Key
+ * 获取指定 Provider 的 Base URL
  */
-export function getActiveApiKey(): { provider: LLMProvider; key: string } | null {
+export function getBaseUrl(provider: LLMProvider): string {
+    const config = getApiKeysConfig();
+    const keyConfig = config.keys.find((k) => k.provider === provider);
+    if (keyConfig === undefined) {
+        return DEFAULT_BASE_URLS[provider];
+    }
+    return keyConfig.baseUrl;
+}
+
+/**
+ * 获取指定 Provider 的完整配置
+ */
+export function getProviderConfig(
+    provider: LLMProvider
+): { key: string; baseUrl: string } | null {
+    const config = getApiKeysConfig();
+    const keyConfig = config.keys.find((k) => k.provider === provider);
+    if (keyConfig === undefined) {
+        return null;
+    }
+    return { key: keyConfig.key, baseUrl: keyConfig.baseUrl };
+}
+
+/**
+ * 获取当前活跃 Provider 的 API Key 和 Base URL
+ */
+export function getActiveApiKey(): {
+    provider: LLMProvider;
+    key: string;
+    baseUrl: string;
+} | null {
     const config = getApiKeysConfig();
     if (config.activeProvider === null) {
         return null;
     }
 
-    const key = getApiKey(config.activeProvider);
-    if (key === null) {
+    const providerConfig = getProviderConfig(config.activeProvider);
+    if (providerConfig === null) {
         return null;
     }
 
-    return { provider: config.activeProvider, key };
+    return { provider: config.activeProvider, ...providerConfig };
 }
 
 /**

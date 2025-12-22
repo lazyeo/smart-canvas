@@ -4,11 +4,13 @@ import React, { useState, useEffect } from "react";
 import {
     saveApiKey,
     getApiKey,
+    getBaseUrl,
     deleteApiKey,
     setActiveProvider,
     maskApiKey,
     getProviderDisplayName,
     getApiKeysConfig,
+    getDefaultBaseUrl,
     LLMProvider,
 } from "@/lib/storage";
 
@@ -25,8 +27,15 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         anthropic: null,
         gemini: null,
     });
+    const [baseUrls, setBaseUrls] = useState<Record<LLMProvider, string>>({
+        openai: getDefaultBaseUrl("openai"),
+        anthropic: getDefaultBaseUrl("anthropic"),
+        gemini: getDefaultBaseUrl("gemini"),
+    });
     const [editingProvider, setEditingProvider] = useState<LLMProvider | null>(null);
-    const [inputValue, setInputValue] = useState("");
+    const [inputKey, setInputKey] = useState("");
+    const [inputBaseUrl, setInputBaseUrl] = useState("");
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     // 加载已保存的 Keys
@@ -39,25 +48,44 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
             anthropic: null,
             gemini: null,
         };
+        const loadedBaseUrls: Record<LLMProvider, string> = {
+            openai: getDefaultBaseUrl("openai"),
+            anthropic: getDefaultBaseUrl("anthropic"),
+            gemini: getDefaultBaseUrl("gemini"),
+        };
 
         PROVIDERS.forEach((provider) => {
             loadedKeys[provider] = getApiKey(provider);
+            loadedBaseUrls[provider] = getBaseUrl(provider);
         });
 
         setKeys(loadedKeys);
+        setBaseUrls(loadedBaseUrls);
     }, []);
 
+    const handleStartEdit = (provider: LLMProvider) => {
+        setEditingProvider(provider);
+        setInputKey("");
+        setInputBaseUrl(baseUrls[provider]);
+        setShowAdvanced(baseUrls[provider] !== getDefaultBaseUrl(provider));
+    };
+
     const handleSave = (provider: LLMProvider) => {
-        if (inputValue.trim() === "") {
+        if (inputKey.trim() === "") {
             setMessage({ type: "error", text: "API Key 不能为空" });
             return;
         }
 
-        const success = saveApiKey(provider, inputValue.trim());
+        const finalBaseUrl = inputBaseUrl.trim() || getDefaultBaseUrl(provider);
+        const success = saveApiKey(provider, inputKey.trim(), finalBaseUrl);
+
         if (success) {
-            setKeys((prev) => ({ ...prev, [provider]: inputValue.trim() }));
+            setKeys((prev) => ({ ...prev, [provider]: inputKey.trim() }));
+            setBaseUrls((prev) => ({ ...prev, [provider]: finalBaseUrl }));
             setEditingProvider(null);
-            setInputValue("");
+            setInputKey("");
+            setInputBaseUrl("");
+            setShowAdvanced(false);
             setMessage({ type: "success", text: "保存成功" });
 
             // 如果是第一个 Key，自动设为活跃
@@ -75,6 +103,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         const success = deleteApiKey(provider);
         if (success) {
             setKeys((prev) => ({ ...prev, [provider]: null }));
+            setBaseUrls((prev) => ({ ...prev, [provider]: getDefaultBaseUrl(provider) }));
             if (activeProvider === provider) {
                 const config = getApiKeysConfig();
                 setActiveProviderState(config.activeProvider);
@@ -93,9 +122,16 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         }
     };
 
+    const handleCancel = () => {
+        setEditingProvider(null);
+        setInputKey("");
+        setInputBaseUrl("");
+        setShowAdvanced(false);
+    };
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="bg-slate-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between p-4 border-b border-slate-700">
                     <h2 className="text-lg font-semibold text-white">API Key 设置</h2>
                     <button
@@ -121,7 +157,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                     )}
 
                     <p className="text-sm text-slate-400">
-                        配置您的 LLM API Key，所有数据仅存储在本地浏览器中。
+                        配置您的 LLM API Key，支持自定义 Base URL 以使用兼容的第三方服务。
                     </p>
 
                     <div className="space-y-3">
@@ -155,62 +191,99 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                 </div>
 
                                 {editingProvider === provider ? (
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="password"
-                                            value={inputValue}
-                                            onChange={(e) => setInputValue(e.target.value)}
-                                            placeholder={`输入 ${getProviderDisplayName(provider)} API Key`}
-                                            className="flex-1 bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500"
-                                            autoFocus
-                                        />
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1">API Key</label>
+                                            <input
+                                                type="password"
+                                                value={inputKey}
+                                                onChange={(e) => setInputKey(e.target.value)}
+                                                placeholder={`输入 ${getProviderDisplayName(provider)} API Key`}
+                                                className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500"
+                                                autoFocus
+                                            />
+                                        </div>
+
                                         <button
-                                            onClick={() => handleSave(provider)}
-                                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
+                                            onClick={() => setShowAdvanced(!showAdvanced)}
+                                            className="text-xs text-slate-400 hover:text-slate-300 flex items-center gap-1"
                                         >
-                                            保存
+                                            <svg
+                                                className={`w-3 h-3 transition-transform ${showAdvanced ? "rotate-90" : ""}`}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            高级设置
                                         </button>
-                                        <button
-                                            onClick={() => {
-                                                setEditingProvider(null);
-                                                setInputValue("");
-                                            }}
-                                            className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded transition-colors"
-                                        >
-                                            取消
-                                        </button>
+
+                                        {showAdvanced && (
+                                            <div>
+                                                <label className="block text-xs text-slate-400 mb-1">
+                                                    Base URL（可选，留空使用官方地址）
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={inputBaseUrl}
+                                                    onChange={(e) => setInputBaseUrl(e.target.value)}
+                                                    placeholder={getDefaultBaseUrl(provider)}
+                                                    className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                                                />
+                                                <p className="text-xs text-slate-500 mt-1">
+                                                    支持第三方 API 代理或本地部署的兼容服务
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleSave(provider)}
+                                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
+                                            >
+                                                保存
+                                            </button>
+                                            <button
+                                                onClick={handleCancel}
+                                                className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded transition-colors"
+                                            >
+                                                取消
+                                            </button>
+                                        </div>
                                     </div>
                                 ) : (
-                                    <div className="flex items-center justify-between">
+                                    <div>
                                         {keys[provider] !== null ? (
-                                            <>
-                                                <code className="text-sm text-slate-400 bg-slate-800 px-2 py-1 rounded">
-                                                    {maskApiKey(keys[provider] as string)}
-                                                </code>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditingProvider(provider);
-                                                            setInputValue("");
-                                                        }}
-                                                        className="text-xs text-slate-400 hover:text-white"
-                                                    >
-                                                        修改
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(provider)}
-                                                        className="text-xs text-red-400 hover:text-red-300"
-                                                    >
-                                                        删除
-                                                    </button>
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <code className="text-sm text-slate-400 bg-slate-800 px-2 py-1 rounded">
+                                                        {maskApiKey(keys[provider] as string)}
+                                                    </code>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => handleStartEdit(provider)}
+                                                            className="text-xs text-slate-400 hover:text-white"
+                                                        >
+                                                            修改
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(provider)}
+                                                            className="text-xs text-red-400 hover:text-red-300"
+                                                        >
+                                                            删除
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </>
+                                                {baseUrls[provider] !== getDefaultBaseUrl(provider) && (
+                                                    <div className="text-xs text-slate-500 font-mono truncate">
+                                                        Base: {baseUrls[provider]}
+                                                    </div>
+                                                )}
+                                            </div>
                                         ) : (
                                             <button
-                                                onClick={() => {
-                                                    setEditingProvider(provider);
-                                                    setInputValue("");
-                                                }}
+                                                onClick={() => handleStartEdit(provider)}
                                                 className="text-sm text-blue-400 hover:text-blue-300"
                                             >
                                                 + 添加 API Key
