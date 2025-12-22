@@ -27,6 +27,17 @@ npm install
 npm run dev
 ```
 
+访问 [http://localhost:3000](http://localhost:3000) 查看应用。
+
+## 开发命令
+
+```bash
+npm run dev      # 启动开发服务器
+npm run build    # 构建生产版本
+npm run start    # 启动生产服务器
+npm run lint     # 运行 ESLint
+```
+
 ## License
 
 MIT
