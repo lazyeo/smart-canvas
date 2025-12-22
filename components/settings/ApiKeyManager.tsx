@@ -5,12 +5,14 @@ import {
     saveApiKey,
     getApiKey,
     getBaseUrl,
+    getModel,
     deleteApiKey,
     setActiveProvider,
     maskApiKey,
     getProviderDisplayName,
     getApiKeysConfig,
     getDefaultBaseUrl,
+    getDefaultModel,
     LLMProvider,
 } from "@/lib/storage";
 
@@ -32,9 +34,15 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         anthropic: getDefaultBaseUrl("anthropic"),
         gemini: getDefaultBaseUrl("gemini"),
     });
+    const [models, setModels] = useState<Record<LLMProvider, string>>({
+        openai: getDefaultModel("openai"),
+        anthropic: getDefaultModel("anthropic"),
+        gemini: getDefaultModel("gemini"),
+    });
     const [editingProvider, setEditingProvider] = useState<LLMProvider | null>(null);
     const [inputKey, setInputKey] = useState("");
     const [inputBaseUrl, setInputBaseUrl] = useState("");
+    const [inputModel, setInputModel] = useState("");
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -53,21 +61,32 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
             anthropic: getDefaultBaseUrl("anthropic"),
             gemini: getDefaultBaseUrl("gemini"),
         };
+        const loadedModels: Record<LLMProvider, string> = {
+            openai: getDefaultModel("openai"),
+            anthropic: getDefaultModel("anthropic"),
+            gemini: getDefaultModel("gemini"),
+        };
 
         PROVIDERS.forEach((provider) => {
             loadedKeys[provider] = getApiKey(provider);
             loadedBaseUrls[provider] = getBaseUrl(provider);
+            loadedModels[provider] = getModel(provider);
         });
 
         setKeys(loadedKeys);
         setBaseUrls(loadedBaseUrls);
+        setModels(loadedModels);
     }, []);
 
     const handleStartEdit = (provider: LLMProvider) => {
         setEditingProvider(provider);
         setInputKey("");
         setInputBaseUrl(baseUrls[provider]);
-        setShowAdvanced(baseUrls[provider] !== getDefaultBaseUrl(provider));
+        setInputModel(models[provider]);
+        const hasCustomSettings =
+            baseUrls[provider] !== getDefaultBaseUrl(provider) ||
+            models[provider] !== getDefaultModel(provider);
+        setShowAdvanced(hasCustomSettings);
     };
 
     const handleSave = (provider: LLMProvider) => {
@@ -77,14 +96,17 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         }
 
         const finalBaseUrl = inputBaseUrl.trim() || getDefaultBaseUrl(provider);
-        const success = saveApiKey(provider, inputKey.trim(), finalBaseUrl);
+        const finalModel = inputModel.trim() || getDefaultModel(provider);
+        const success = saveApiKey(provider, inputKey.trim(), finalBaseUrl, finalModel);
 
         if (success) {
             setKeys((prev) => ({ ...prev, [provider]: inputKey.trim() }));
             setBaseUrls((prev) => ({ ...prev, [provider]: finalBaseUrl }));
+            setModels((prev) => ({ ...prev, [provider]: finalModel }));
             setEditingProvider(null);
             setInputKey("");
             setInputBaseUrl("");
+            setInputModel("");
             setShowAdvanced(false);
             setMessage({ type: "success", text: "保存成功" });
 
@@ -104,6 +126,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         if (success) {
             setKeys((prev) => ({ ...prev, [provider]: null }));
             setBaseUrls((prev) => ({ ...prev, [provider]: getDefaultBaseUrl(provider) }));
+            setModels((prev) => ({ ...prev, [provider]: getDefaultModel(provider) }));
             if (activeProvider === provider) {
                 const config = getApiKeysConfig();
                 setActiveProviderState(config.activeProvider);
@@ -126,6 +149,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         setEditingProvider(null);
         setInputKey("");
         setInputBaseUrl("");
+        setInputModel("");
         setShowAdvanced(false);
     };
 
@@ -157,7 +181,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                     )}
 
                     <p className="text-sm text-slate-400">
-                        配置您的 LLM API Key，支持自定义 Base URL 以使用兼容的第三方服务。
+                        配置您的 LLM API Key，支持自定义 Base URL 和模型名称。
                     </p>
 
                     <div className="space-y-3">
@@ -220,20 +244,34 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                         </button>
 
                                         {showAdvanced && (
-                                            <div>
-                                                <label className="block text-xs text-slate-400 mb-1">
-                                                    Base URL（可选，留空使用官方地址）
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={inputBaseUrl}
-                                                    onChange={(e) => setInputBaseUrl(e.target.value)}
-                                                    placeholder={getDefaultBaseUrl(provider)}
-                                                    className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500 font-mono text-xs"
-                                                />
-                                                <p className="text-xs text-slate-500 mt-1">
-                                                    支持第三方 API 代理或本地部署的兼容服务
-                                                </p>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-xs text-slate-400 mb-1">
+                                                        模型名称
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={inputModel}
+                                                        onChange={(e) => setInputModel(e.target.value)}
+                                                        placeholder={getDefaultModel(provider)}
+                                                        className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-slate-400 mb-1">
+                                                        Base URL（可选，留空使用官方地址）
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={inputBaseUrl}
+                                                        onChange={(e) => setInputBaseUrl(e.target.value)}
+                                                        placeholder={getDefaultBaseUrl(provider)}
+                                                        className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                                                    />
+                                                    <p className="text-xs text-slate-500 mt-1">
+                                                        支持第三方 API 代理或本地部署的兼容服务
+                                                    </p>
+                                                </div>
                                             </div>
                                         )}
 
@@ -275,6 +313,11 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                         </button>
                                                     </div>
                                                 </div>
+                                                {models[provider] !== getDefaultModel(provider) && (
+                                                    <div className="text-xs text-slate-500 font-mono truncate">
+                                                        Model: {models[provider]}
+                                                    </div>
+                                                )}
                                                 {baseUrls[provider] !== getDefaultBaseUrl(provider) && (
                                                     <div className="text-xs text-slate-500 font-mono truncate">
                                                         Base: {baseUrls[provider]}

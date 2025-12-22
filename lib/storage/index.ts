@@ -3,6 +3,7 @@ export {
     saveApiKey,
     getApiKey,
     getBaseUrl,
+    getModel,
     getProviderConfig,
     getActiveApiKey,
     setActiveProvider,
@@ -11,5 +12,6 @@ export {
     getProviderDisplayName,
     getApiKeysConfig,
     getDefaultBaseUrl,
+    getDefaultModel,
 } from "./api-keys";
 export type { LLMProvider } from "./api-keys";

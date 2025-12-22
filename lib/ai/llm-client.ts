@@ -197,15 +197,21 @@ export async function chat(
         throw new Error("未配置 API Key，请在设置中添加");
     }
 
-    const { provider, key, baseUrl } = activeKey;
+    const { provider, key, baseUrl, model } = activeKey;
+
+    // 使用配置中的模型，除非 options 中显式指定
+    const finalOptions = {
+        ...options,
+        model: options.model || model,
+    };
 
     switch (provider) {
         case "openai":
-            return callOpenAI(messages, key, baseUrl, options);
+            return callOpenAI(messages, key, baseUrl, finalOptions);
         case "anthropic":
-            return callAnthropic(messages, key, baseUrl, options);
+            return callAnthropic(messages, key, baseUrl, finalOptions);
         case "gemini":
-            return callGemini(messages, key, baseUrl, options);
+            return callGemini(messages, key, baseUrl, finalOptions);
         default:
             throw new Error(`不支持的 Provider: ${provider}`);
     }
