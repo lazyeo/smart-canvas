@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useImperativeHandle, forwardRef, useState, useCallback } from "react";
+import React, { useRef, useImperativeHandle, forwardRef, useState, useCallback, useEffect } from "react";
 import { DrawIoEmbed, DrawIoEmbedRef, EventExport, EventSave } from "react-drawio";
 
 /**
@@ -13,7 +13,7 @@ export interface DrawioAPI {
 }
 
 export interface DrawioWrapperProps {
-    initialXml?: string;
+    xml?: string;
     onSave?: (xml: string) => void;
     onChange?: (xml: string) => void;
 }
@@ -22,15 +22,23 @@ export interface DrawioWrapperProps {
  * Draw.io 画布封装组件
  */
 export const DrawioWrapper = forwardRef<DrawioAPI, DrawioWrapperProps>(
-    function DrawioWrapper({ initialXml, onSave, onChange }, ref) {
+    function DrawioWrapper({ xml, onSave, onChange }, ref) {
         const drawioRef = useRef<DrawIoEmbedRef>(null);
-        const [currentXml, setCurrentXml] = useState(initialXml || "");
+        const [currentXml, setCurrentXml] = useState(xml || "");
+
+        // 当外部 xml prop 变化时同步到内部 state
+        useEffect(() => {
+            if (xml && xml !== currentXml) {
+                console.log("DrawioWrapper: XML updated from prop");
+                setCurrentXml(xml);
+            }
+        }, [xml, currentXml]);
 
         // 暴露 API
         useImperativeHandle(ref, () => ({
             getXml: () => currentXml,
-            setXml: (xml: string) => {
-                setCurrentXml(xml);
+            setXml: (newXml: string) => {
+                setCurrentXml(newXml);
             },
             exportPng: async () => {
                 return "";

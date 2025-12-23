@@ -43,9 +43,7 @@ function HomeContent() {
           />
         </div>
         <div className={`w-full h-full ${engine === "drawio" ? "block" : "hidden"}`}>
-          <DrawioWrapper
-            initialXml={drawioXml}
-          />
+          <DrawioWrapper xml={drawioXml} />
         </div>
       </MainLayout>
 
