@@ -291,28 +291,63 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             newElements = newElements.filter((el) => !idsToDelete.has(el.id));
         }
 
-        // 添加节点
+        // 添加节点和连线
         if (result.nodesToAdd.length > 0) {
             const baseX = selectionInfo?.bounds?.x ?? 100;
-            const baseY = selectionInfo?.bounds?.y ?? 100;
-            const offsetX = (selectionInfo?.bounds?.width ?? 150) + 100;
+            const baseY = (selectionInfo?.bounds?.y ?? 100) + (selectionInfo?.bounds?.height ?? 60) + 50;
+
+            // 构建完整的图表数据（包含节点和连线）
+            const nodeIds = result.nodesToAdd.map((n, idx) => n.id || `node-${Date.now()}-${idx}`);
+
+            // 获取第一个选中的形状元素作为连接起点
+            const firstSelectedShape = selectionInfo?.selectedElements?.find(
+                (el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond"
+            );
 
             const diagramData = {
                 nodes: result.nodesToAdd.map((n, idx) => ({
-                    id: n.id || `node-${Date.now()}-${idx}`,
+                    id: nodeIds[idx],
                     type: n.type || "process",
                     label: n.label || "新节点",
-                    row: 0,
-                    column: idx,
+                    row: idx,  // 垂直布局
+                    column: 0,
                 })),
-                edges: [],
+                edges: [
+                    // 从选中节点连接到第一个新节点
+                    ...(firstSelectedShape ? [{
+                        id: `edge-start-${Date.now()}`,
+                        source: firstSelectedShape.id,
+                        target: nodeIds[0],
+                        label: "",
+                    }] : []),
+                    // AI 返回的连线
+                    ...result.edgesToAdd.map((e, idx) => ({
+                        id: e.id || `edge-${Date.now()}-${idx}`,
+                        source: e.sourceNodeId || nodeIds[idx] || "",
+                        target: e.targetNodeId || nodeIds[idx + 1] || "",
+                        label: e.label || "",
+                    })),
+                    // 如果 AI 没有返回连线，自动生成节点间的连线
+                    ...(result.edgesToAdd.length === 0 && result.nodesToAdd.length > 1
+                        ? nodeIds.slice(0, -1).map((sourceId, idx) => ({
+                            id: `edge-auto-${Date.now()}-${idx}`,
+                            source: sourceId,
+                            target: nodeIds[idx + 1],
+                            label: "",
+                        }))
+                        : []),
+                ],
             };
+
             const { elements } = generateExcalidrawElements(diagramData);
+
+            // 调整位置到选中区域下方
             const adjustedElements = elements.map((el) => ({
                 ...el,
-                x: el.x + baseX + offsetX,
+                x: el.x + baseX,
                 y: el.y + baseY,
             }));
+
             newElements = [...newElements, ...adjustedElements];
         }
 
