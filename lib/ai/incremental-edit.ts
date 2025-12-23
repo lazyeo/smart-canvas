@@ -143,27 +143,141 @@ export function buildIncrementalEditPrompt(request: IncrementalEditRequest): str
  * 解析增量编辑响应
  */
 export function parseIncrementalEditResponse(response: string): IncrementalEditResult | null {
-    try {
-        // 提取 JSON
-        const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-        const jsonStr = jsonMatch ? jsonMatch[1] : response;
+    console.log("Parsing incremental edit response:", response.substring(0, 500));
 
-        const data = JSON.parse(jsonStr.trim());
+    try {
+        // 尝试多种 JSON 提取方式
+        let jsonStr = "";
+
+        // 方式1: ```json 代码块
+        const jsonBlockMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonBlockMatch) {
+            jsonStr = jsonBlockMatch[1];
+            console.log("Found JSON in code block");
+        }
+
+        // 方式2: ``` 通用代码块
+        if (!jsonStr) {
+            const codeBlockMatch = response.match(/```\s*([\s\S]*?)\s*```/);
+            if (codeBlockMatch) {
+                jsonStr = codeBlockMatch[1];
+                console.log("Found JSON in generic code block");
+            }
+        }
+
+        // 方式3: 直接查找 JSON 对象
+        if (!jsonStr) {
+            const jsonObjectMatch = response.match(/\{[\s\S]*"(?:operation|explanation|nodesToAdd|nodesToUpdate|nodesToDelete)"[\s\S]*\}/);
+            if (jsonObjectMatch) {
+                jsonStr = jsonObjectMatch[0];
+                console.log("Found JSON object directly");
+            }
+        }
+
+        // 方式4: 整个响应作为 JSON
+        if (!jsonStr) {
+            jsonStr = response.trim();
+            console.log("Using entire response as JSON");
+        }
+
+        // 清理可能的问题
+        jsonStr = jsonStr.trim();
+
+        // 尝试修复常见问题
+        // 移除 BOM
+        if (jsonStr.charCodeAt(0) === 0xFEFF) {
+            jsonStr = jsonStr.slice(1);
+        }
+
+        // 移除开头的 JSON 标记
+        if (jsonStr.toLowerCase().startsWith("json")) {
+            jsonStr = jsonStr.slice(4).trim();
+        }
+
+        console.log("Attempting to parse:", jsonStr.substring(0, 200));
+
+        const data = JSON.parse(jsonStr);
 
         return {
             success: true,
-            nodesToAdd: data.nodesToAdd || [],
-            nodesToUpdate: data.nodesToUpdate || [],
-            nodesToDelete: data.nodesToDelete || [],
-            edgesToAdd: data.edgesToAdd || [],
-            edgesToUpdate: data.edgesToUpdate || [],
-            edgesToDelete: data.edgesToDelete || [],
+            nodesToAdd: Array.isArray(data.nodesToAdd) ? data.nodesToAdd : [],
+            nodesToUpdate: Array.isArray(data.nodesToUpdate) ? data.nodesToUpdate : [],
+            nodesToDelete: Array.isArray(data.nodesToDelete) ? data.nodesToDelete : [],
+            edgesToAdd: Array.isArray(data.edgesToAdd) ? data.edgesToAdd : [],
+            edgesToUpdate: Array.isArray(data.edgesToUpdate) ? data.edgesToUpdate : [],
+            edgesToDelete: Array.isArray(data.edgesToDelete) ? data.edgesToDelete : [],
             explanation: data.explanation || "操作完成",
         };
     } catch (error) {
         console.error("Failed to parse incremental edit response:", error);
-        return null;
+        console.error("Raw response:", response);
+
+        // 尝试从错误中恢复 - 提取简单操作
+        try {
+            return extractSimpleOperation(response);
+        } catch {
+            return null;
+        }
     }
+}
+
+/**
+ * 尝试从自然语言响应中提取简单操作
+ */
+function extractSimpleOperation(response: string): IncrementalEditResult | null {
+    const lowerResponse = response.toLowerCase();
+
+    // 检测删除操作
+    if (lowerResponse.includes("删除") || lowerResponse.includes("移除")) {
+        return {
+            success: true,
+            nodesToAdd: [],
+            nodesToUpdate: [],
+            nodesToDelete: ["selected"],
+            edgesToAdd: [],
+            edgesToUpdate: [],
+            edgesToDelete: [],
+            explanation: "删除选中的元素",
+        };
+    }
+
+    // 检测添加操作
+    if (lowerResponse.includes("添加") || lowerResponse.includes("新增")) {
+        // 尝试提取标签
+        const labelMatch = response.match(/[「"']([^「」"']+)[」"']/);
+        const label = labelMatch ? labelMatch[1] : "新节点";
+
+        return {
+            success: true,
+            nodesToAdd: [{ id: `node-${Date.now()}`, type: "process", label }],
+            nodesToUpdate: [],
+            nodesToDelete: [],
+            edgesToAdd: [],
+            edgesToUpdate: [],
+            edgesToDelete: [],
+            explanation: `添加节点: ${label}`,
+        };
+    }
+
+    // 检测修改操作
+    if (lowerResponse.includes("修改") || lowerResponse.includes("改为")) {
+        const labelMatch = response.match(/(?:改为|修改为|改成)[「"':]?\s*([^「」"'\n,，]+)/);
+        if (labelMatch) {
+            const newLabel = labelMatch[1].trim();
+            return {
+                success: true,
+                nodesToAdd: [],
+                nodesToUpdate: [{ id: "selected", changes: { label: newLabel } }],
+                nodesToDelete: [],
+                edgesToAdd: [],
+                edgesToUpdate: [],
+                edgesToDelete: [],
+                explanation: `修改文字为: ${newLabel}`,
+            };
+        }
+    }
+
+    return null;
 }
 
 /**
