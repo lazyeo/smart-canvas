@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import { useCanvas } from "@/contexts";
 import {
     chatStream,
@@ -47,7 +47,42 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [streamingContent, setStreamingContent] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const { updateScene, getElements } = useCanvas();
+    const { updateScene, getElements, selectedElementIds } = useCanvas();
+
+    // 计算选中状态和位置
+    const selectionInfo = useMemo(() => {
+        if (selectedElementIds.length === 0) {
+            return null;
+        }
+        const elements = getElements();
+        const selectedElements = elements.filter(
+            (el) => selectedElementIds.includes(el.id) && !el.isDeleted
+        );
+
+        if (selectedElements.length === 0) return null;
+
+        // 计算选中区域边界
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const labels: string[] = [];
+
+        for (const el of selectedElements) {
+            minX = Math.min(minX, el.x);
+            minY = Math.min(minY, el.y);
+            maxX = Math.max(maxX, el.x + (el.width || 0));
+            maxY = Math.max(maxY, el.y + (el.height || 0));
+
+            // 提取文本标签
+            if (el.type === "text" && el.text) {
+                labels.push(el.text as string);
+            }
+        }
+
+        return {
+            count: selectedElementIds.length,
+            labels: labels.slice(0, 3),
+            bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+        };
+    }, [selectedElementIds, getElements]);
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -137,10 +172,23 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                     if (diagramData) {
                         // 生成 Excalidraw 元素
                         const { elements } = generateExcalidrawElements(diagramData);
-
-                        // 更新画布
+                        // 更新画布 - 基于选中位置偏移
                         const currentElements = getElements();
-                        updateScene({ elements: [...currentElements, ...elements] });
+                        let adjustedElements = elements;
+
+                        if (selectionInfo && selectionInfo.bounds) {
+                            // 如果有选中元素，将新内容放在选中区域右侧
+                            const offsetX = selectionInfo.bounds.x + selectionInfo.bounds.width + 100;
+                            const offsetY = selectionInfo.bounds.y;
+
+                            adjustedElements = elements.map((el) => ({
+                                ...el,
+                                x: el.x + offsetX,
+                                y: el.y + offsetY,
+                            }));
+                        }
+
+                        updateScene({ elements: [...currentElements, ...adjustedElements] });
 
                         // 更新消息，存储解析后的数据
                         setMessages((prev) =>
@@ -218,8 +266,25 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         <div className="w-80 bg-slate-900 border-l border-slate-700 flex flex-col">
             <div className="p-4 border-b border-slate-700">
                 <h2 className="text-sm font-medium text-white">AI 助手</h2>
-                <p className="text-xs text-slate-400 mt-1">描述您想要的图表，AI 将为您生成</p>
+                <p className="text-xs text-slate-400 mt-1">
+                    {selectionInfo
+                        ? `已选中 ${selectionInfo.count} 个元素，新内容将添加到其右侧`
+                        : "描述您想要的图表，AI 将为您生成"}
+                </p>
             </div>
+
+            {/* 选中状态提示 */}
+            {selectionInfo && selectionInfo.labels.length > 0 && (
+                <div className="px-4 py-2 bg-blue-900/30 border-b border-slate-700">
+                    <div className="text-xs text-blue-300 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        选中: {selectionInfo.labels.join(", ")}
+                        {selectionInfo.labels.length < selectionInfo.count && ` +${selectionInfo.count - selectionInfo.labels.length}`}
+                    </div>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.length === 0 ? (
