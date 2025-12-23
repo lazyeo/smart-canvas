@@ -51,3 +51,27 @@ export {
     injectMappingsToElements,
     findNodesForSelectedElements,
 } from "./element-mapping";
+
+// 坐标转换引擎
+export {
+    CoordinateEngine,
+    createCoordinateEngine,
+    getDefaultCoordinateEngine,
+    DEFAULT_LAYOUT_CONFIG,
+    type LayoutConfig,
+    type LayoutDirection,
+    type Point,
+    type Bounds,
+    type LogicalPosition,
+} from "./coordinate-engine";
+
+// 画布状态同步服务
+export {
+    CanvasSyncService,
+    createCanvasSyncService,
+    getDefaultCanvasSyncService,
+    type SyncEventType,
+    type SyncEvent,
+    type SyncCallbacks,
+    type ElementChanges,
+} from "./canvas-sync";
