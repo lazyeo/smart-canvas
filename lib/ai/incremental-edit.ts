@@ -209,13 +209,19 @@ export function parseIncrementalEditResponse(response: string): IncrementalEditR
             explanation: data.explanation || "操作完成",
         };
     } catch (error) {
-        console.error("Failed to parse incremental edit response:", error);
-        console.error("Raw response:", response);
+        console.warn("JSON parse failed, trying fallback extraction:", error);
 
         // 尝试从错误中恢复 - 提取简单操作
         try {
-            return extractSimpleOperation(response);
+            const result = extractSimpleOperation(response);
+            if (result) {
+                console.log("Fallback extraction successful:", result.explanation);
+                return result;
+            }
+            console.warn("Fallback extraction returned null");
+            return null;
         } catch {
+            console.warn("Fallback extraction failed");
             return null;
         }
     }
