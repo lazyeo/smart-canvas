@@ -116,13 +116,14 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             {
                 onToken: (token, accumulated) => {
                     setStreamingContent(accumulated);
-                    // 更新消息显示流式进度
+                    // 更新消息显示流式进度（估算 token 数：字符数 / 4）
+                    const estimatedTokens = Math.ceil(accumulated.length / 4);
                     setMessages((prev) =>
                         prev.map((msg) =>
                             msg.id === aiMsgId
                                 ? {
                                     ...msg,
-                                    content: `正在生成... (${accumulated.length} 字符)`,
+                                    content: `正在生成... (~${estimatedTokens} tokens)`,
                                     status: "streaming",
                                 }
                                 : msg
