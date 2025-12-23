@@ -5,11 +5,9 @@ import { ExportButton, ImportButton } from "@/components/toolbar";
 
 interface HeaderProps {
   onSettingsClick?: () => void;
-  onEditModeClick?: () => void;
-  isEditMode?: boolean;
 }
 
-export function Header({ onSettingsClick, onEditModeClick, isEditMode }: HeaderProps) {
+export function Header({ onSettingsClick }: HeaderProps) {
   return (
     <header className="h-14 bg-slate-900 border-b border-slate-700 flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -20,31 +18,6 @@ export function Header({ onSettingsClick, onEditModeClick, isEditMode }: HeaderP
       </div>
 
       <div className="flex items-center gap-1">
-        {/* 编辑模式按钮 */}
-        <button
-          onClick={onEditModeClick}
-          className={`p-2 rounded-lg transition-colors flex items-center gap-1 text-sm ${isEditMode
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-          title="增量编辑模式"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-            />
-          </svg>
-          <span className="hidden sm:inline">编辑</span>
-        </button>
-
         <ImportButton />
         <ExportButton />
 
