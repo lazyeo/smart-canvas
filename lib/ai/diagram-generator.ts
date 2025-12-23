@@ -54,6 +54,29 @@ function generateId(): string {
 }
 
 /**
+ * 生成随机种子
+ */
+function generateSeed(): number {
+    return Math.floor(Math.random() * 2147483647);
+}
+
+/**
+ * 创建基础元素属性（Excalidraw 必需的字段）
+ */
+function createBaseElementProps() {
+    return {
+        version: 1,
+        versionNonce: generateSeed(),
+        seed: generateSeed(),
+        isDeleted: false,
+        updated: Date.now(),
+        angle: 0,
+        frameId: null,
+        link: null,
+    };
+}
+
+/**
  * 计算节点位置
  */
 function calculatePosition(
@@ -86,8 +109,9 @@ function createNodeElement(
     const elementId = generateId();
     const now = Date.now();
 
-    // 创建 Excalidraw 元素
+    // 创建 Excalidraw 元素（包含所有必需属性）
     const element: ExcalidrawElement = {
+        ...createBaseElementProps(),
         id: elementId,
         type: shape,
         x: pos.x,
@@ -98,11 +122,13 @@ function createNodeElement(
         backgroundColor: colors.background,
         fillStyle: "solid",
         strokeWidth: 2,
+        strokeStyle: "solid",
         roughness: 1,
         opacity: 100,
         groupIds: [],
-        boundElements: [],
+        boundElements: null,
         locked: false,
+        roundness: { type: 3 },
         customData: {
             nodeId: node.id,
             moduleId: moduleId,
@@ -139,21 +165,37 @@ function createLabelElement(
     label: string
 ): ExcalidrawElement {
     const textId = generateId();
+    const textWidth = Math.max(label.length * 14, 50);
+    const textHeight = 25;
 
     return {
+        ...createBaseElementProps(),
         id: textId,
         type: "text",
-        x: nodeElement.x + nodeElement.width / 2 - label.length * 6,
-        y: nodeElement.y + nodeElement.height / 2 - 10,
-        width: label.length * 12,
-        height: 20,
+        x: nodeElement.x + (nodeElement.width - textWidth) / 2,
+        y: nodeElement.y + (nodeElement.height - textHeight) / 2,
+        width: textWidth,
+        height: textHeight,
         strokeColor: "#1e1e1e",
         backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        boundElements: null,
+        locked: false,
+        roundness: null,
         text: label,
         fontSize: 16,
         fontFamily: 1,
         textAlign: "center",
         verticalAlign: "middle",
+        containerId: null,
+        originalText: label,
+        autoResize: true,
+        lineHeight: 1.25,
         customData: {
             isLabel: true,
             parentId: nodeElement.id,
@@ -186,8 +228,9 @@ function createEdgeElement(
     const endX = targetPos.x + targetPos.width / 2;
     const endY = targetPos.y;
 
-    // 创建箭头元素
+    // 创建箭头元素（包含所有必需属性）
     const element: ExcalidrawElement = {
+        ...createBaseElementProps(),
         id: elementId,
         type: "arrow",
         x: startX,
@@ -196,13 +239,22 @@ function createEdgeElement(
         height: endY - startY,
         strokeColor: "#1e1e1e",
         backgroundColor: "transparent",
+        fillStyle: "solid",
         strokeWidth: 2,
+        strokeStyle: "solid",
         roughness: 1,
         opacity: 100,
+        groupIds: [],
+        boundElements: null,
+        locked: false,
+        roundness: { type: 2 },
         points: [
             [0, 0],
             [endX - startX, endY - startY],
         ],
+        startBinding: null,
+        endBinding: null,
+        lastCommittedPoint: null,
         startArrowhead: null,
         endArrowhead: "arrow",
         customData: {
