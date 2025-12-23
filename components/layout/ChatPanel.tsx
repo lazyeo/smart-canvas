@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useCanvas } from "@/contexts";
 import {
     chatStream,
@@ -9,8 +9,13 @@ import {
     parseDiagramJSON,
     generateExcalidrawElements,
     DiagramType,
+    createIncrementalEditService,
+    IncrementalEditService,
+    IncrementalEditResult,
+    SelectionContext,
 } from "@/lib/ai";
 import { getActiveApiKey } from "@/lib/storage";
+import { ShadowNode } from "@/types";
 
 interface DiagramNode {
     id: string;
@@ -81,8 +86,29 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             count: selectedElementIds.length,
             labels: labels.slice(0, 3),
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+            selectedElements,
         };
     }, [selectedElementIds, getElements]);
+
+    // 增量编辑服务
+    const editServiceRef = useRef<IncrementalEditService | null>(null);
+    useEffect(() => {
+        if (!editServiceRef.current) {
+            editServiceRef.current = createIncrementalEditService();
+        }
+    }, []);
+
+    // 检测编辑意图
+    const detectEditIntent = (message: string): boolean => {
+        const editKeywords = [
+            "修改", "改为", "改成", "更改", "替换",
+            "删除", "移除", "去掉",
+            "添加", "新增", "增加", "插入",
+            "连接", "连线", "指向",
+            "重命名", "改名",
+        ];
+        return editKeywords.some((kw) => message.includes(kw));
+    };
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -138,6 +164,163 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         setIsLoading(true);
         setStreamingContent("");
 
+        // 判断是编辑模式还是生成模式
+        const isEditMode = selectionInfo && selectionInfo.count > 0 && detectEditIntent(userMessage);
+
+        if (isEditMode && editServiceRef.current) {
+            // === 编辑模式 ===
+            await handleEditMode(userMessage, aiMsgId);
+        } else {
+            // === 生成模式 ===
+            await handleGenerateMode(userMessage, aiMsgId);
+        }
+    };
+
+    // 编辑模式处理
+    const handleEditMode = async (userMessage: string, aiMsgId: string) => {
+        if (!selectionInfo || !editServiceRef.current) return;
+
+        // 构建选中上下文
+        const context: SelectionContext = {
+            elementIds: selectedElementIds,
+            nodes: selectionInfo.selectedElements
+                .filter((el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond")
+                .map((el) => ({
+                    id: el.id,
+                    type: "process",
+                    label: selectionInfo.labels[0] || "节点",
+                    elementIds: [el.id],
+                    logicalPosition: { row: 0, column: 0 },
+                    position: { x: el.x, y: el.y, width: el.width || 150, height: el.height || 60 },
+                    properties: {},
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                } as ShadowNode)),
+            relatedEdges: [],
+            modules: [],
+            bounds: selectionInfo.bounds,
+            description: `选中了 ${selectionInfo.count} 个元素: ${selectionInfo.labels.join(", ")}`,
+            timestamp: Date.now(),
+        };
+
+        const result = await editServiceRef.current.edit(
+            { instruction: userMessage, context },
+            (tokens) => {
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === aiMsgId
+                            ? { ...msg, content: `正在分析... (~${tokens} tokens)` }
+                            : msg
+                    )
+                );
+            }
+        );
+
+        if (result.success) {
+            // 应用编辑结果
+            applyEditResult(result);
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? {
+                            ...msg,
+                            content: result.explanation,
+                            status: "success",
+                        }
+                        : msg
+                )
+            );
+        } else {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? {
+                            ...msg,
+                            content: result.error || "编辑失败",
+                            status: "error",
+                        }
+                        : msg
+                )
+            );
+        }
+
+        setIsLoading(false);
+        setStreamingContent("");
+        setTimeout(scrollToBottom, 100);
+    };
+
+    // 应用编辑结果
+    const applyEditResult = (result: IncrementalEditResult) => {
+        const currentElements = getElements();
+        let newElements = [...currentElements];
+
+        // 修改文字
+        if (result.nodesToUpdate.length > 0) {
+            for (const update of result.nodesToUpdate) {
+                if (update.changes.label) {
+                    // 更新选中的文本元素
+                    for (let i = 0; i < newElements.length; i++) {
+                        const el = newElements[i];
+                        if (el.type === "text" && selectedElementIds.includes(el.id)) {
+                            newElements[i] = {
+                                ...el,
+                                text: update.changes.label,
+                                originalText: update.changes.label,
+                                version: (el.version || 0) + 1,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // 删除节点
+        if (result.nodesToDelete.length > 0) {
+            const idsToDelete = new Set(selectedElementIds);
+            // 也删除关联的箭头和文本
+            for (const el of currentElements) {
+                if (el.type === "arrow") {
+                    if (el.startBinding && idsToDelete.has(el.startBinding.elementId)) {
+                        idsToDelete.add(el.id);
+                    }
+                    if (el.endBinding && idsToDelete.has(el.endBinding.elementId)) {
+                        idsToDelete.add(el.id);
+                    }
+                }
+            }
+            newElements = newElements.filter((el) => !idsToDelete.has(el.id));
+        }
+
+        // 添加节点
+        if (result.nodesToAdd.length > 0) {
+            const baseX = selectionInfo?.bounds?.x ?? 100;
+            const baseY = selectionInfo?.bounds?.y ?? 100;
+            const offsetX = (selectionInfo?.bounds?.width ?? 150) + 100;
+
+            const diagramData = {
+                nodes: result.nodesToAdd.map((n, idx) => ({
+                    id: n.id || `node-${Date.now()}-${idx}`,
+                    type: n.type || "process",
+                    label: n.label || "新节点",
+                    row: 0,
+                    column: idx,
+                })),
+                edges: [],
+            };
+            const { elements } = generateExcalidrawElements(diagramData);
+            const adjustedElements = elements.map((el) => ({
+                ...el,
+                x: el.x + baseX + offsetX,
+                y: el.y + baseY,
+            }));
+            newElements = [...newElements, ...adjustedElements];
+        }
+
+        updateScene({ elements: newElements });
+    };
+
+    // 生成模式处理
+    const handleGenerateMode = async (userMessage: string, aiMsgId: string) => {
         // 检测图表类型
         const diagramType = detectDiagramType(userMessage);
         const prompt = buildDiagramPrompt(userMessage, diagramType);
