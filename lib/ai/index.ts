@@ -1,4 +1,4 @@
-export { chat, ask, type LLMMessage, type LLMResponse, type LLMOptions } from "./llm-client";
+export { chat, chatStream, ask, type LLMMessage, type LLMResponse, type LLMOptions, type StreamCallbacks } from "./llm-client";
 export {
     SYSTEM_PROMPT,
     buildDiagramPrompt,

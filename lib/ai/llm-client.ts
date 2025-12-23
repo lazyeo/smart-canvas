@@ -1,5 +1,5 @@
 /**
- * LLM 客户端 - 支持多 Provider
+ * LLM 客户端 - 支持多 Provider 和流式输出
  * OpenAI, Anthropic, Gemini 统一接口
  */
 
@@ -25,6 +25,12 @@ export interface LLMOptions {
     model?: string;
 }
 
+export interface StreamCallbacks {
+    onToken: (token: string, accumulated: string) => void;
+    onComplete: (fullContent: string) => void;
+    onError: (error: Error) => void;
+}
+
 // 默认模型配置
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
     openai: "gpt-4o",
@@ -33,7 +39,241 @@ const DEFAULT_MODELS: Record<LLMProvider, string> = {
 };
 
 /**
- * 调用 OpenAI 兼容 API
+ * 流式调用 OpenAI 兼容 API
+ */
+async function streamOpenAI(
+    messages: LLMMessage[],
+    apiKey: string,
+    baseUrl: string,
+    options: LLMOptions,
+    callbacks: StreamCallbacks
+): Promise<void> {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model: options.model || DEFAULT_MODELS.openai,
+            messages: messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+            })),
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.maxTokens ?? 4096,
+            stream: true,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let accumulated = "";
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    if (data === "[DONE]") continue;
+
+                    try {
+                        const parsed = JSON.parse(data);
+                        const content = parsed.choices?.[0]?.delta?.content || "";
+                        if (content) {
+                            accumulated += content;
+                            callbacks.onToken(content, accumulated);
+                        }
+                    } catch {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+        callbacks.onComplete(accumulated);
+    } catch (error) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+/**
+ * 流式调用 Anthropic API
+ */
+async function streamAnthropic(
+    messages: LLMMessage[],
+    apiKey: string,
+    baseUrl: string,
+    options: LLMOptions,
+    callbacks: StreamCallbacks
+): Promise<void> {
+    const systemMessage = messages.find((m) => m.role === "system");
+    const userMessages = messages.filter((m) => m.role !== "system");
+
+    const response = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+            model: options.model || DEFAULT_MODELS.anthropic,
+            max_tokens: options.maxTokens ?? 4096,
+            system: systemMessage?.content || "",
+            messages: userMessages.map((m) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.content,
+            })),
+            stream: true,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Anthropic API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let accumulated = "";
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.type === "content_block_delta") {
+                            const content = parsed.delta?.text || "";
+                            if (content) {
+                                accumulated += content;
+                                callbacks.onToken(content, accumulated);
+                            }
+                        }
+                    } catch {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+        callbacks.onComplete(accumulated);
+    } catch (error) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+/**
+ * 流式调用 Gemini API (Gemini 使用不同的流式格式)
+ */
+async function streamGemini(
+    messages: LLMMessage[],
+    apiKey: string,
+    baseUrl: string,
+    options: LLMOptions,
+    callbacks: StreamCallbacks
+): Promise<void> {
+    const model = options.model || DEFAULT_MODELS.gemini;
+
+    const contents = messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }],
+        }));
+
+    const systemMessage = messages.find((m) => m.role === "system");
+    if (systemMessage && contents.length > 0 && contents[0].role === "user") {
+        contents[0].parts[0].text = `${systemMessage.content}\n\n${contents[0].parts[0].text}`;
+    }
+
+    const response = await fetch(
+        `${baseUrl}/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                contents,
+                generationConfig: {
+                    temperature: options.temperature ?? 0.7,
+                    maxOutputTokens: options.maxTokens ?? 4096,
+                },
+            }),
+        }
+    );
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let accumulated = "";
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    try {
+                        const parsed = JSON.parse(data);
+                        const content = parsed.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                        if (content) {
+                            accumulated += content;
+                            callbacks.onToken(content, accumulated);
+                        }
+                    } catch {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+        callbacks.onComplete(accumulated);
+    } catch (error) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+/**
+ * 非流式调用 OpenAI 兼容 API
  */
 async function callOpenAI(
     messages: LLMMessage[],
@@ -77,7 +317,7 @@ async function callOpenAI(
 }
 
 /**
- * 调用 Anthropic API
+ * 非流式调用 Anthropic API
  */
 async function callAnthropic(
     messages: LLMMessage[],
@@ -85,7 +325,6 @@ async function callAnthropic(
     baseUrl: string,
     options: LLMOptions
 ): Promise<LLMResponse> {
-    // 分离 system 消息
     const systemMessage = messages.find((m) => m.role === "system");
     const userMessages = messages.filter((m) => m.role !== "system");
 
@@ -126,7 +365,7 @@ async function callAnthropic(
 }
 
 /**
- * 调用 Google Gemini API
+ * 非流式调用 Gemini API
  */
 async function callGemini(
     messages: LLMMessage[],
@@ -136,7 +375,6 @@ async function callGemini(
 ): Promise<LLMResponse> {
     const model = options.model || DEFAULT_MODELS.gemini;
 
-    // 转换消息格式
     const contents = messages
         .filter((m) => m.role !== "system")
         .map((m) => ({
@@ -144,7 +382,6 @@ async function callGemini(
             parts: [{ text: m.content }],
         }));
 
-    // system 消息作为第一条 user 消息的前缀
     const systemMessage = messages.find((m) => m.role === "system");
     if (systemMessage && contents.length > 0 && contents[0].role === "user") {
         contents[0].parts[0].text = `${systemMessage.content}\n\n${contents[0].parts[0].text}`;
@@ -186,7 +423,40 @@ async function callGemini(
 }
 
 /**
- * 统一的 LLM 调用接口
+ * 统一的流式 LLM 调用接口
+ */
+export async function chatStream(
+    messages: LLMMessage[],
+    callbacks: StreamCallbacks,
+    options: LLMOptions = {}
+): Promise<void> {
+    const activeKey = getActiveApiKey();
+    if (!activeKey) {
+        callbacks.onError(new Error("未配置 API Key，请在设置中添加"));
+        return;
+    }
+
+    const { provider, key, baseUrl, model } = activeKey;
+
+    const finalOptions = {
+        ...options,
+        model: options.model || model,
+    };
+
+    switch (provider) {
+        case "openai":
+            return streamOpenAI(messages, key, baseUrl, finalOptions, callbacks);
+        case "anthropic":
+            return streamAnthropic(messages, key, baseUrl, finalOptions, callbacks);
+        case "gemini":
+            return streamGemini(messages, key, baseUrl, finalOptions, callbacks);
+        default:
+            callbacks.onError(new Error(`不支持的 Provider: ${provider}`));
+    }
+}
+
+/**
+ * 统一的非流式 LLM 调用接口
  */
 export async function chat(
     messages: LLMMessage[],
@@ -199,7 +469,6 @@ export async function chat(
 
     const { provider, key, baseUrl, model } = activeKey;
 
-    // 使用配置中的模型，除非 options 中显式指定
     const finalOptions = {
         ...options,
         model: options.model || model,
