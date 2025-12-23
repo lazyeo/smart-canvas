@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useCanvas } from "@/contexts";
 import {
-    SelectionContextService,
-    createSelectionContextService,
     IncrementalEditService,
     createIncrementalEditService,
     IncrementalEditRequest,
@@ -14,6 +12,7 @@ import {
 } from "@/lib/ai";
 import { getActiveApiKey } from "@/lib/storage";
 import { ShadowNode, ShadowEdge } from "@/types";
+import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
 
 interface EditMessage {
     id: string;
@@ -27,54 +26,143 @@ interface EditMessage {
 interface EditModePanelProps {
     isVisible: boolean;
     onClose: () => void;
-    nodes: ShadowNode[];
-    edges: ShadowEdge[];
 }
 
-export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePanelProps) {
+/**
+ * 从 Excalidraw 元素的 customData 中提取节点信息
+ */
+function extractNodesFromElements(
+    elementIds: string[],
+    elements: readonly ExcalidrawElement[]
+): { nodes: ShadowNode[]; nodeLabels: string[] } {
+    const nodes: ShadowNode[] = [];
+    const nodeLabels: string[] = [];
+    const seenNodeIds = new Set<string>();
+
+    for (const element of elements) {
+        if (!elementIds.includes(element.id)) continue;
+        if (element.isDeleted) continue;
+
+        const customData = element.customData;
+
+        // 检查是否有节点信息
+        if (customData && customData.nodeId && !seenNodeIds.has(customData.nodeId as string)) {
+            seenNodeIds.add(customData.nodeId as string);
+
+            const label = (customData.label as string) || "未命名节点";
+            nodeLabels.push(label);
+
+            nodes.push({
+                id: customData.nodeId as string,
+                type: "process",
+                label: label,
+                elementIds: [element.id],
+                logicalPosition: { row: 0, column: 0 },
+                position: {
+                    x: element.x,
+                    y: element.y,
+                    width: element.width || 150,
+                    height: element.height || 60,
+                },
+                properties: {},
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            });
+        }
+
+        // 如果没有 customData，检查是否是形状或文本
+        if (!customData && (element.type === "rectangle" || element.type === "ellipse" || element.type === "diamond")) {
+            nodeLabels.push(`[${element.type}]`);
+        }
+
+        // 文本元素
+        if (element.type === "text" && element.text) {
+            if (!nodeLabels.includes(element.text as string)) {
+                nodeLabels.push(element.text as string);
+            }
+        }
+    }
+
+    return { nodes, nodeLabels };
+}
+
+/**
+ * 创建简化的选中上下文
+ */
+function createSimpleContext(
+    elementIds: string[],
+    elements: readonly ExcalidrawElement[]
+): SelectionContext {
+    const { nodes, nodeLabels } = extractNodesFromElements(elementIds, elements);
+
+    // 计算选中区域边界
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const selectedElements = elements.filter((el) => elementIds.includes(el.id) && !el.isDeleted);
+
+    for (const el of selectedElements) {
+        minX = Math.min(minX, el.x);
+        minY = Math.min(minY, el.y);
+        maxX = Math.max(maxX, el.x + (el.width || 0));
+        maxY = Math.max(maxY, el.y + (el.height || 0));
+    }
+
+    const bounds = selectedElements.length > 0
+        ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+        : null;
+
+    // 生成描述
+    const description = nodeLabels.length > 0
+        ? `选中的元素 (${nodeLabels.length}个): ${nodeLabels.join(", ")}`
+        : `选中了 ${elementIds.length} 个元素`;
+
+    return {
+        elementIds,
+        nodes,
+        relatedEdges: [],
+        modules: [],
+        bounds,
+        description,
+        timestamp: Date.now(),
+    };
+}
+
+export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState<EditMessage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [currentContext, setCurrentContext] = useState<SelectionContext | null>(null);
     const [estimatedTokens, setEstimatedTokens] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const { updateScene, getElements, selectedElementIds } = useCanvas();
 
     // 服务实例
-    const selectionServiceRef = useRef<SelectionContextService | null>(null);
     const editServiceRef = useRef<IncrementalEditService | null>(null);
 
     // 初始化服务
     useEffect(() => {
-        if (!selectionServiceRef.current) {
-            selectionServiceRef.current = createSelectionContextService();
-        }
         if (!editServiceRef.current) {
             editServiceRef.current = createIncrementalEditService();
         }
     }, []);
 
-    // 更新影子数据
-    useEffect(() => {
-        if (selectionServiceRef.current) {
-            selectionServiceRef.current.updateShadowData(nodes, edges, []);
+    // 当前选中上下文
+    const currentContext = useMemo(() => {
+        if (selectedElementIds.length === 0) {
+            return null;
         }
-    }, [nodes, edges]);
-
-    // 监听选中变化
-    useEffect(() => {
-        if (selectionServiceRef.current && selectedElementIds.length > 0) {
-            const elements = getElements();
-            const context = selectionServiceRef.current.handleSelectionChange(
-                selectedElementIds,
-                elements
-            );
-            setCurrentContext(context);
-        } else {
-            setCurrentContext(null);
-        }
+        const elements = getElements();
+        return createSimpleContext(selectedElementIds, elements);
     }, [selectedElementIds, getElements]);
+
+    // 提取选中节点标签
+    const selectedLabels = useMemo(() => {
+        if (!currentContext) return [];
+        const { nodeLabels } = extractNodesFromElements(
+            currentContext.elementIds,
+            getElements()
+        );
+        return nodeLabels;
+    }, [currentContext, getElements]);
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -92,7 +180,26 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (input.trim() === "" || isLoading || !currentContext) {
+        if (input.trim() === "" || isLoading) {
+            return;
+        }
+
+        // 获取最新的选中上下文
+        const elements = getElements();
+        const context = selectedElementIds.length > 0
+            ? createSimpleContext(selectedElementIds, elements)
+            : null;
+
+        if (!context || context.elementIds.length === 0) {
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: `edit-msg-${Date.now()}`,
+                    role: "ai",
+                    content: "无法执行操作：当前未选中任何节点，请先选中需要修改的节点",
+                    status: "error",
+                },
+            ]);
             return;
         }
 
@@ -130,10 +237,19 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
         setIsLoading(true);
         setEstimatedTokens(0);
 
+        // 增强上下文描述
+        const enhancedContext: SelectionContext = {
+            ...context,
+            description: `${context.description}\n\n选中元素的位置信息：\n${context.bounds
+                    ? `x: ${Math.round(context.bounds.x)}, y: ${Math.round(context.bounds.y)}, 宽: ${Math.round(context.bounds.width)}, 高: ${Math.round(context.bounds.height)}`
+                    : "无"
+                }`,
+        };
+
         // 构建编辑请求
         const request: IncrementalEditRequest = {
             instruction: userMessage,
-            context: currentContext,
+            context: enhancedContext,
         };
 
         // 执行增量编辑
@@ -151,7 +267,7 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
 
             if (result.success) {
                 // 应用变更到画布
-                applyChanges(result);
+                applyChanges(result, context);
 
                 setMessages((prev) =>
                     prev.map((msg) =>
@@ -185,63 +301,82 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
         setTimeout(scrollToBottom, 100);
     };
 
-    const applyChanges = (result: IncrementalEditResult) => {
+    const applyChanges = (result: IncrementalEditResult, context: SelectionContext) => {
         const currentElements = getElements();
         let newElements = [...currentElements];
+
+        // 计算新节点的位置（基于选中区域）
+        const baseX = context.bounds?.x ?? 100;
+        const baseY = context.bounds?.y ?? 100;
+        const offsetX = (context.bounds?.width ?? 150) + 100;
 
         // 处理新增节点
         if (result.nodesToAdd.length > 0) {
             const diagramData = {
-                nodes: result.nodesToAdd.map((n) => ({
-                    id: n.id || `node-${Date.now()}`,
+                nodes: result.nodesToAdd.map((n, idx) => ({
+                    id: n.id || `node-${Date.now()}-${idx}`,
                     type: n.type || "process",
                     label: n.label || "新节点",
-                    row: n.logicalPosition?.row || 0,
-                    column: n.logicalPosition?.column || 0,
+                    row: 0,
+                    column: idx,
                 })),
                 edges: [],
             };
+
             const { elements } = generateExcalidrawElements(diagramData);
-            newElements = [...newElements, ...elements];
+
+            // 调整位置到选中区域附近
+            const adjustedElements = elements.map((el, idx) => ({
+                ...el,
+                x: el.x + baseX + offsetX,
+                y: el.y + baseY,
+            }));
+
+            newElements = [...newElements, ...adjustedElements];
         }
 
-        // 处理新增连线
-        if (result.edgesToAdd.length > 0) {
-            // 获取节点位置信息
-            const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
-            for (const node of [...nodes, ...result.nodesToAdd as ShadowNode[]]) {
-                if (node.position) {
-                    nodePositions.set(node.id, node.position);
+        // 处理节点更新（修改标签等）
+        if (result.nodesToUpdate.length > 0) {
+            for (const update of result.nodesToUpdate) {
+                // 找到对应的文本元素并更新
+                if (update.changes.label) {
+                    for (const node of context.nodes) {
+                        if (node.id === update.id) {
+                            // 找到关联的文本元素
+                            for (let i = 0; i < newElements.length; i++) {
+                                const el = newElements[i];
+                                if (el.type === "text" && el.customData?.parentId &&
+                                    node.elementIds.includes(el.customData.parentId as string)) {
+                                    newElements[i] = {
+                                        ...el,
+                                        text: update.changes.label,
+                                        originalText: update.changes.label,
+                                        version: (el.version || 0) + 1,
+                                    };
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            const diagramData = {
-                nodes: [],
-                edges: result.edgesToAdd.map((e) => ({
-                    id: e.id || `edge-${Date.now()}`,
-                    source: e.sourceNodeId || "",
-                    target: e.targetNodeId || "",
-                    label: e.label,
-                })),
-            };
-            // 连线需要节点位置，这里简化处理
         }
 
         // 处理删除
-        if (result.nodesToDelete.length > 0 || result.edgesToDelete.length > 0) {
+        if (result.nodesToDelete.length > 0) {
             const deleteNodeIds = new Set(result.nodesToDelete);
-            const deleteEdgeIds = new Set(result.edgesToDelete);
 
-            // 找到关联的元素 ID
+            // 找到要删除的元素 ID
             const elementIdsToDelete = new Set<string>();
-            for (const node of nodes) {
+            for (const node of context.nodes) {
                 if (deleteNodeIds.has(node.id)) {
                     node.elementIds.forEach((id) => elementIdsToDelete.add(id));
                 }
             }
-            for (const edge of edges) {
-                if (deleteEdgeIds.has(edge.id)) {
-                    elementIdsToDelete.add(edge.elementId);
+
+            // 也删除关联的文本元素
+            for (const el of currentElements) {
+                if (el.customData?.parentId && elementIdsToDelete.has(el.customData.parentId as string)) {
+                    elementIdsToDelete.add(el.id);
                 }
             }
 
@@ -256,6 +391,8 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
         return null;
     }
 
+    const hasSelection = selectedElementIds.length > 0;
+
     return (
         <div className="absolute top-16 right-4 w-80 bg-slate-900 border border-slate-700 rounded-lg shadow-xl flex flex-col max-h-[70vh] z-50">
             {/* 头部 */}
@@ -263,8 +400,8 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
                 <div>
                     <h3 className="text-sm font-medium text-white">增量编辑模式</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                        {currentContext
-                            ? `已选中 ${currentContext.nodes.length} 个节点`
+                        {hasSelection
+                            ? `已选中 ${selectedElementIds.length} 个元素`
                             : "请先选中要编辑的元素"}
                     </p>
                 </div>
@@ -279,18 +416,24 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
             </div>
 
             {/* 选中上下文 */}
-            {currentContext && currentContext.nodes.length > 0 && (
+            {hasSelection && selectedLabels.length > 0 && (
                 <div className="p-3 border-b border-slate-700 bg-slate-800/50">
-                    <div className="text-xs text-slate-400 mb-2">选中的节点:</div>
+                    <div className="text-xs text-slate-400 mb-2">选中的内容:</div>
                     <div className="flex flex-wrap gap-1">
-                        {currentContext.nodes.map((node) => (
+                        {selectedLabels.slice(0, 5).map((label, idx) => (
                             <span
-                                key={node.id}
-                                className="px-2 py-0.5 bg-blue-600/30 text-blue-300 rounded text-xs"
+                                key={idx}
+                                className="px-2 py-0.5 bg-blue-600/30 text-blue-300 rounded text-xs truncate max-w-[120px]"
+                                title={label}
                             >
-                                {node.label}
+                                {label}
                             </span>
                         ))}
+                        {selectedLabels.length > 5 && (
+                            <span className="px-2 py-0.5 bg-slate-700 text-slate-400 rounded text-xs">
+                                +{selectedLabels.length - 5} 更多
+                            </span>
+                        )}
                     </div>
                 </div>
             )}
@@ -299,8 +442,8 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 {messages.length === 0 ? (
                     <div className="text-center py-6 text-slate-500 text-sm">
-                        {currentContext
-                            ? '输入编辑指令，如"修改标签为XXX"'
+                        {hasSelection
+                            ? '输入编辑指令，如"修改文字为XXX"、"删除这个"'
                             : "选中画布上的元素后开始编辑"}
                     </div>
                 ) : (
@@ -310,12 +453,12 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
                                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                                     <div
                                         className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${msg.role === "user"
-                                            ? "bg-blue-600 text-white"
-                                            : msg.status === "error"
-                                                ? "bg-red-900/50 text-red-300"
-                                                : msg.status === "streaming"
-                                                    ? "bg-slate-800 text-slate-400"
-                                                    : "bg-slate-800 text-slate-200"
+                                                ? "bg-blue-600 text-white"
+                                                : msg.status === "error"
+                                                    ? "bg-red-900/50 text-red-300"
+                                                    : msg.status === "streaming"
+                                                        ? "bg-slate-800 text-slate-400"
+                                                        : "bg-slate-800 text-slate-200"
                                             }`}
                                     >
                                         {msg.status === "streaming" && (
@@ -364,13 +507,13 @@ export function EditModePanel({ isVisible, onClose, nodes, edges }: EditModePane
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder={currentContext ? "输入编辑指令..." : "请先选中元素"}
-                        disabled={isLoading || !currentContext}
+                        placeholder={hasSelection ? "输入编辑指令..." : "请先选中元素"}
+                        disabled={isLoading}
                         className="flex-1 bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:border-blue-500 placeholder-slate-500 disabled:opacity-50"
                     />
                     <button
                         type="submit"
-                        disabled={isLoading || input.trim() === "" || !currentContext}
+                        disabled={isLoading || input.trim() === ""}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white rounded-lg px-3 py-2 transition-colors disabled:cursor-not-allowed"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
