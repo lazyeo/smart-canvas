@@ -182,20 +182,65 @@ export function layoutDiagram(
         }
     }
 
-    // 更新文本元素位置（跟随容器）
+    // 构建 groupId 到节点位置的映射
+    const groupToPosition = new Map<string, { x: number; y: number; width: number; height: number; deltaX: number; deltaY: number }>();
+
+    // 找到每个节点的 groupIds，建立映射
+    for (const el of elements) {
+        if (el.isDeleted) continue;
+
+        if (nodes.has(el.id) && el.groupIds && el.groupIds.length > 0) {
+            const pos = positionMap.get(el.id);
+            if (pos) {
+                // 计算位移
+                const deltaX = pos.x - el.x;
+                const deltaY = pos.y - el.y;
+
+                for (const groupId of el.groupIds) {
+                    groupToPosition.set(groupId, {
+                        ...pos,
+                        deltaX,
+                        deltaY,
+                    });
+                }
+            }
+        }
+    }
+
+    // 更新文本元素位置（跟随容器或同组节点）
     for (let i = 0; i < newElements.length; i++) {
         const el = newElements[i];
-        if (el.type === "text" && el.containerId && positionMap.has(el.containerId)) {
-            const containerPos = positionMap.get(el.containerId)!;
-            // 文本居中于容器
-            const textWidth = el.width || 100;
-            const textHeight = el.height || 24;
-            newElements[i] = {
-                ...el,
-                x: containerPos.x + (containerPos.width - textWidth) / 2,
-                y: containerPos.y + (containerPos.height - textHeight) / 2,
-                version: (el.version || 0) + 1,
-            };
+
+        if (el.type === "text") {
+            // 方式1: 通过 containerId 绑定
+            if (el.containerId && positionMap.has(el.containerId)) {
+                const containerPos = positionMap.get(el.containerId)!;
+                // 文本居中于容器
+                const textWidth = el.width || 100;
+                const textHeight = el.height || 24;
+                newElements[i] = {
+                    ...el,
+                    x: containerPos.x + (containerPos.width - textWidth) / 2,
+                    y: containerPos.y + (containerPos.height - textHeight) / 2,
+                    version: (el.version || 0) + 1,
+                };
+            }
+            // 方式2: 通过 groupIds 成组
+            else if (el.groupIds && el.groupIds.length > 0) {
+                for (const groupId of el.groupIds) {
+                    if (groupToPosition.has(groupId)) {
+                        const groupPos = groupToPosition.get(groupId)!;
+                        // 应用相同的位移
+                        newElements[i] = {
+                            ...el,
+                            x: el.x + groupPos.deltaX,
+                            y: el.y + groupPos.deltaY,
+                            version: (el.version || 0) + 1,
+                        };
+                        break;
+                    }
+                }
+            }
         }
     }
 
