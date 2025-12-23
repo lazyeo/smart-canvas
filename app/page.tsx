@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { CanvasProvider, useCanvas } from "@/contexts";
+import { CanvasProvider, useCanvas, EngineProvider, useEngine } from "@/contexts";
 import { MainLayout } from "@/components/layout";
 import { ApiKeyManager } from "@/components/settings";
-import { ExcalidrawWrapper } from "@/components/canvas";
+import { ExcalidrawWrapper, DrawioWrapper } from "@/components/canvas";
 import { WelcomeGuide } from "@/components/guide";
 import { layoutDiagram } from "@/lib/layout";
 
 function HomeContent() {
   const [showSettings, setShowSettings] = useState(false);
   const { canvasRef, setSelectedElements, getElements, updateScene } = useCanvas();
+  const { engine, drawioXml } = useEngine();
 
   const handleSelectionChange = useCallback((ids: string[]) => {
     setSelectedElements(ids);
@@ -34,10 +35,16 @@ function HomeContent() {
         onSettingsClick={() => setShowSettings(true)}
         onAutoLayoutClick={handleAutoLayout}
       >
-        <ExcalidrawWrapper
-          ref={canvasRef}
-          onSelectionChange={handleSelectionChange}
-        />
+        {engine === "excalidraw" ? (
+          <ExcalidrawWrapper
+            ref={canvasRef}
+            onSelectionChange={handleSelectionChange}
+          />
+        ) : (
+          <DrawioWrapper
+            initialXml={drawioXml}
+          />
+        )}
       </MainLayout>
 
       {showSettings && (
@@ -51,8 +58,10 @@ function HomeContent() {
 
 export default function Home() {
   return (
-    <CanvasProvider>
-      <HomeContent />
-    </CanvasProvider>
+    <EngineProvider>
+      <CanvasProvider>
+        <HomeContent />
+      </CanvasProvider>
+    </EngineProvider>
   );
 }

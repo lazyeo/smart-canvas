@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { useCanvas } from "@/contexts";
+import { useCanvas, useEngine } from "@/contexts";
+import { generateDrawioXml } from "@/lib/converters";
 import {
     chatStream,
     SYSTEM_PROMPT,
@@ -53,6 +54,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const [streamingContent, setStreamingContent] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { updateScene, getElements, selectedElementIds } = useCanvas();
+    const { setDrawioXml } = useEngine();
 
     // 计算选中状态和位置
     const selectionInfo = useMemo(() => {
@@ -407,6 +409,9 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         }
 
                         updateScene({ elements: [...currentElements, ...adjustedElements] });
+
+                        // 同步生成 Draw.io XML
+                        setDrawioXml(generateDrawioXml(diagramData));
 
                         // 更新消息，存储解析后的数据
                         setMessages((prev) =>
