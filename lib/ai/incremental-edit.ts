@@ -277,6 +277,21 @@ function extractSimpleOperation(response: string): IncrementalEditResult | null 
         }
     }
 
+    // 检测连线操作
+    if (lowerResponse.includes("连接") || lowerResponse.includes("连线") ||
+        lowerResponse.includes("指向") || lowerResponse.includes("箭头")) {
+        return {
+            success: true,
+            nodesToAdd: [],
+            nodesToUpdate: [],
+            nodesToDelete: [],
+            edgesToAdd: [{ id: `edge-${Date.now()}`, sourceNodeId: "selected-0", targetNodeId: "selected-1", label: "" }],
+            edgesToUpdate: [],
+            edgesToDelete: [],
+            explanation: "在选中的两个节点之间添加连线",
+        };
+    }
+
     return null;
 }
 

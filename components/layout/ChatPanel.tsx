@@ -353,8 +353,145 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             newElements = [...newElements, ...adjustedElements];
         }
 
+        // 添加连线（无新节点时）
+        if (result.edgesToAdd.length > 0 && result.nodesToAdd.length === 0) {
+            // 获取选中的形状元素
+            const selectedShapes = selectionInfo?.selectedElements?.filter(
+                (el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond"
+            ) || [];
+
+            for (const edge of result.edgesToAdd) {
+                // 处理 selected-0, selected-1 占位符
+                let sourceId = edge.sourceNodeId;
+                let targetId = edge.targetNodeId;
+
+                if (sourceId === "selected-0" && selectedShapes.length > 0) {
+                    sourceId = selectedShapes[0].id;
+                }
+                if (targetId === "selected-1" && selectedShapes.length > 1) {
+                    targetId = selectedShapes[1].id;
+                }
+                if (sourceId === "selected" && selectedShapes.length > 0) {
+                    sourceId = selectedShapes[0].id;
+                }
+                if (targetId === "selected" && selectedShapes.length > 1) {
+                    targetId = selectedShapes[1].id;
+                }
+
+                if (sourceId && targetId) {
+                    // 创建箭头元素
+                    const sourceEl = currentElements.find((el) => el.id === sourceId);
+                    const targetEl = currentElements.find((el) => el.id === targetId);
+
+                    if (sourceEl && targetEl) {
+                        const arrowId = `arrow-${Date.now()}`;
+                        const startX = sourceEl.x + (sourceEl.width || 150) / 2;
+                        const startY = sourceEl.y + (sourceEl.height || 60);
+                        const endX = targetEl.x + (targetEl.width || 150) / 2;
+                        const endY = targetEl.y;
+
+                        const arrow = {
+                            id: arrowId,
+                            type: "arrow" as const,
+                            x: startX,
+                            y: startY,
+                            width: endX - startX,
+                            height: endY - startY,
+                            angle: 0,
+                            strokeColor: "#1e1e1e",
+                            backgroundColor: "transparent",
+                            fillStyle: "hachure",
+                            strokeWidth: 2,
+                            strokeStyle: "solid",
+                            roughness: 1,
+                            opacity: 100,
+                            groupIds: [],
+                            frameId: null,
+                            roundness: { type: 2 },
+                            seed: Math.floor(Math.random() * 100000),
+                            version: 1,
+                            versionNonce: Math.floor(Math.random() * 100000),
+                            isDeleted: false,
+                            boundElements: null,
+                            updated: Date.now(),
+                            link: null,
+                            locked: false,
+                            points: [[0, 0], [endX - startX, endY - startY]] as [number, number][],
+                            lastCommittedPoint: null,
+                            startBinding: {
+                                elementId: sourceId,
+                                focus: 0,
+                                gap: 1,
+                            },
+                            endBinding: {
+                                elementId: targetId,
+                                focus: 0,
+                                gap: 1,
+                            },
+                            startArrowhead: null,
+                            endArrowhead: "arrow",
+                        };
+
+                        newElements = [...newElements, arrow];
+                        console.log("Created arrow between", sourceId, "and", targetId);
+                    }
+                }
+            }
+        }
+
         updateScene({ elements: newElements });
+
+        // 同步到 Draw.io - 从当前元素提取图表数据
+        syncToDrawio(newElements);
     };
+
+    // 同步 Excalidraw 元素到 Draw.io
+    const syncToDrawio = (elements: typeof currentElements) => {
+        // 从 Excalidraw 元素提取节点和边
+        const nodes: Array<{ id: string; type: string; label: string; row: number; column: number }> = [];
+        const edges: Array<{ id: string; source: string; target: string; label?: string }> = [];
+
+        let rowIndex = 0;
+        for (const el of elements) {
+            if (el.isDeleted) continue;
+
+            if (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond") {
+                // 尝试找到关联的文本
+                let label = "";
+                const groupId = el.groupIds?.[0];
+                if (groupId) {
+                    const textEl = elements.find((e) => e.type === "text" && e.groupIds?.includes(groupId));
+                    if (textEl && textEl.text) {
+                        label = textEl.text;
+                    }
+                }
+
+                nodes.push({
+                    id: el.id,
+                    type: el.type === "diamond" ? "decision" : el.type === "ellipse" ? "start" : "process",
+                    label: label || "节点",
+                    row: rowIndex++,
+                    column: 0,
+                });
+            }
+
+            if (el.type === "arrow" && el.startBinding && el.endBinding) {
+                edges.push({
+                    id: el.id,
+                    source: el.startBinding.elementId,
+                    target: el.endBinding.elementId,
+                    label: "",
+                });
+            }
+        }
+
+        if (nodes.length > 0) {
+            setDrawioXml(generateDrawioXml({ nodes, edges }));
+        }
+    };
+
+    // 获取当前元素的引用（用于 syncToDrawio）
+    const currentElements = getElements();
 
     // 生成模式处理
     const handleGenerateMode = async (userMessage: string, aiMsgId: string) => {
