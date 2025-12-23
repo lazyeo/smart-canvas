@@ -35,16 +35,18 @@ function HomeContent() {
         onSettingsClick={() => setShowSettings(true)}
         onAutoLayoutClick={handleAutoLayout}
       >
-        {engine === "excalidraw" ? (
+        {/* 使用 CSS 隐藏而非条件渲染，保持组件挂载状态 */}
+        <div className={`w-full h-full ${engine === "excalidraw" ? "block" : "hidden"}`}>
           <ExcalidrawWrapper
             ref={canvasRef}
             onSelectionChange={handleSelectionChange}
           />
-        ) : (
+        </div>
+        <div className={`w-full h-full ${engine === "drawio" ? "block" : "hidden"}`}>
           <DrawioWrapper
             initialXml={drawioXml}
           />
-        )}
+        </div>
       </MainLayout>
 
       {showSettings && (
