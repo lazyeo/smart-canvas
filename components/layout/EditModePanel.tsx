@@ -241,8 +241,8 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
         const enhancedContext: SelectionContext = {
             ...context,
             description: `${context.description}\n\n选中元素的位置信息：\n${context.bounds
-                    ? `x: ${Math.round(context.bounds.x)}, y: ${Math.round(context.bounds.y)}, 宽: ${Math.round(context.bounds.width)}, 高: ${Math.round(context.bounds.height)}`
-                    : "无"
+                ? `x: ${Math.round(context.bounds.x)}, y: ${Math.round(context.bounds.y)}, 宽: ${Math.round(context.bounds.width)}, 高: ${Math.round(context.bounds.height)}`
+                : "无"
                 }`,
         };
 
@@ -310,6 +310,19 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
         const baseY = context.bounds?.y ?? 100;
         const offsetX = (context.bounds?.width ?? 150) + 100;
 
+        // 构建元素位置映射
+        const elementPositions = new Map<string, { x: number; y: number; width: number; height: number }>();
+        for (const el of currentElements) {
+            if (!el.isDeleted && (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond")) {
+                elementPositions.set(el.id, {
+                    x: el.x,
+                    y: el.y,
+                    width: el.width || 150,
+                    height: el.height || 60,
+                });
+            }
+        }
+
         // 处理新增节点
         if (result.nodesToAdd.length > 0) {
             const diagramData = {
@@ -326,61 +339,255 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
             const { elements } = generateExcalidrawElements(diagramData);
 
             // 调整位置到选中区域附近
-            const adjustedElements = elements.map((el, idx) => ({
+            const adjustedElements = elements.map((el) => ({
                 ...el,
                 x: el.x + baseX + offsetX,
                 y: el.y + baseY,
             }));
 
             newElements = [...newElements, ...adjustedElements];
+
+            // 更新位置映射
+            for (const el of adjustedElements) {
+                if (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond") {
+                    elementPositions.set(el.id, {
+                        x: el.x,
+                        y: el.y,
+                        width: el.width || 150,
+                        height: el.height || 60,
+                    });
+                }
+            }
         }
 
         // 处理节点更新（修改标签等）
         if (result.nodesToUpdate.length > 0) {
             for (const update of result.nodesToUpdate) {
-                // 找到对应的文本元素并更新
+                // 找到选中元素中的文本并更新
                 if (update.changes.label) {
-                    for (const node of context.nodes) {
-                        if (node.id === update.id) {
-                            // 找到关联的文本元素
-                            for (let i = 0; i < newElements.length; i++) {
-                                const el = newElements[i];
-                                if (el.type === "text" && el.customData?.parentId &&
-                                    node.elementIds.includes(el.customData.parentId as string)) {
-                                    newElements[i] = {
-                                        ...el,
-                                        text: update.changes.label,
-                                        originalText: update.changes.label,
-                                        version: (el.version || 0) + 1,
-                                    };
-                                }
-                            }
+                    // 直接在选中元素中找文本元素
+                    for (let i = 0; i < newElements.length; i++) {
+                        const el = newElements[i];
+                        if (el.type === "text" && context.elementIds.includes(el.id)) {
+                            newElements[i] = {
+                                ...el,
+                                text: update.changes.label,
+                                originalText: update.changes.label,
+                                version: (el.version || 0) + 1,
+                            };
+                            break; // 只更新第一个匹配的
                         }
                     }
                 }
             }
         }
 
-        // 处理删除
-        if (result.nodesToDelete.length > 0) {
-            const deleteNodeIds = new Set(result.nodesToDelete);
+        // 处理新增连线
+        if (result.edgesToAdd.length > 0) {
+            for (const edge of result.edgesToAdd) {
+                // 找到源和目标节点的位置
+                let sourcePos = elementPositions.get(edge.sourceNodeId || "");
+                let targetPos = elementPositions.get(edge.targetNodeId || "");
 
-            // 找到要删除的元素 ID
-            const elementIdsToDelete = new Set<string>();
-            for (const node of context.nodes) {
-                if (deleteNodeIds.has(node.id)) {
-                    node.elementIds.forEach((id) => elementIdsToDelete.add(id));
+                // 如果找不到，使用选中元素的位置
+                if (!sourcePos && context.elementIds.length > 0) {
+                    const firstSelected = currentElements.find((el) =>
+                        context.elementIds.includes(el.id) &&
+                        (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond")
+                    );
+                    if (firstSelected) {
+                        sourcePos = {
+                            x: firstSelected.x,
+                            y: firstSelected.y,
+                            width: firstSelected.width || 150,
+                            height: firstSelected.height || 60,
+                        };
+                    }
+                }
+
+                if (!targetPos) {
+                    // 使用选中元素右侧的位置
+                    targetPos = {
+                        x: baseX + offsetX,
+                        y: baseY,
+                        width: 150,
+                        height: 60,
+                    };
+                }
+
+                if (sourcePos && targetPos) {
+                    // 创建箭头元素
+                    const arrowId = edge.id || `arrow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                    const startX = sourcePos.x + sourcePos.width;
+                    const startY = sourcePos.y + sourcePos.height / 2;
+                    const endX = targetPos.x;
+                    const endY = targetPos.y + targetPos.height / 2;
+
+                    const arrowElement = {
+                        id: arrowId,
+                        type: "arrow" as const,
+                        x: startX,
+                        y: startY,
+                        width: endX - startX,
+                        height: endY - startY,
+                        angle: 0,
+                        strokeColor: "#1e1e1e",
+                        backgroundColor: "transparent",
+                        fillStyle: "solid" as const,
+                        strokeWidth: 2,
+                        strokeStyle: "solid" as const,
+                        roughness: 1,
+                        opacity: 100,
+                        groupIds: [],
+                        frameId: null,
+                        index: `a${Date.now()}` as const,
+                        roundness: { type: 2 },
+                        seed: Math.floor(Math.random() * 2000000000),
+                        version: 1,
+                        versionNonce: Math.floor(Math.random() * 2000000000),
+                        isDeleted: false,
+                        boundElements: null,
+                        updated: Date.now(),
+                        link: null,
+                        locked: false,
+                        points: [[0, 0], [endX - startX, endY - startY]] as [number, number][],
+                        lastCommittedPoint: null,
+                        startBinding: null,
+                        endBinding: null,
+                        startArrowhead: null,
+                        endArrowhead: "arrow" as const,
+                        elbowed: false,
+                    };
+
+                    newElements.push(arrowElement as unknown as ExcalidrawElement);
+
+                    // 如果有标签，添加文本
+                    if (edge.label) {
+                        const labelX = (startX + endX) / 2;
+                        const labelY = (startY + endY) / 2 - 15;
+
+                        const labelElement = {
+                            id: `label-${arrowId}`,
+                            type: "text" as const,
+                            x: labelX,
+                            y: labelY,
+                            width: edge.label.length * 12,
+                            height: 24,
+                            angle: 0,
+                            strokeColor: "#1e1e1e",
+                            backgroundColor: "transparent",
+                            fillStyle: "solid" as const,
+                            strokeWidth: 1,
+                            strokeStyle: "solid" as const,
+                            roughness: 1,
+                            opacity: 100,
+                            groupIds: [],
+                            frameId: null,
+                            index: `a${Date.now() + 1}` as const,
+                            roundness: null,
+                            seed: Math.floor(Math.random() * 2000000000),
+                            version: 1,
+                            versionNonce: Math.floor(Math.random() * 2000000000),
+                            isDeleted: false,
+                            boundElements: null,
+                            updated: Date.now(),
+                            link: null,
+                            locked: false,
+                            text: edge.label,
+                            fontSize: 16,
+                            fontFamily: 1,
+                            textAlign: "center" as const,
+                            verticalAlign: "middle" as const,
+                            containerId: null,
+                            originalText: edge.label,
+                            autoResize: true,
+                            lineHeight: 1.25,
+                        };
+
+                        newElements.push(labelElement as unknown as ExcalidrawElement);
+                    }
                 }
             }
+        }
+
+        // 处理连线更新（修改标签）
+        if (result.edgesToUpdate && result.edgesToUpdate.length > 0) {
+            for (const update of result.edgesToUpdate) {
+                if (update.changes.label) {
+                    // 查找选中的连线相关的文本
+                    for (let i = 0; i < newElements.length; i++) {
+                        const el = newElements[i];
+                        if (el.type === "text" && el.id.startsWith("label-")) {
+                            newElements[i] = {
+                                ...el,
+                                text: update.changes.label,
+                                originalText: update.changes.label,
+                                version: (el.version || 0) + 1,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // 处理删除节点
+        if (result.nodesToDelete.length > 0) {
+            // 直接删除选中的元素
+            const selectedIds = new Set(context.elementIds);
+
+            // 也找到连接到这些元素的箭头
+            const arrowsToDelete = new Set<string>();
+            for (const el of currentElements) {
+                if (el.type === "arrow") {
+                    // 检查箭头是否连接到被删除的元素
+                    if (el.startBinding && selectedIds.has(el.startBinding.elementId)) {
+                        arrowsToDelete.add(el.id);
+                    }
+                    if (el.endBinding && selectedIds.has(el.endBinding.elementId)) {
+                        arrowsToDelete.add(el.id);
+                    }
+                }
+            }
+
+            // 合并要删除的 ID
+            const allIdsToDelete = new Set([...selectedIds, ...arrowsToDelete]);
 
             // 也删除关联的文本元素
             for (const el of currentElements) {
-                if (el.customData?.parentId && elementIdsToDelete.has(el.customData.parentId as string)) {
-                    elementIdsToDelete.add(el.id);
+                if (el.customData?.parentId && allIdsToDelete.has(el.customData.parentId as string)) {
+                    allIdsToDelete.add(el.id);
+                }
+                // 删除箭头标签
+                if (el.type === "text" && el.id.startsWith("label-")) {
+                    const arrowId = el.id.replace("label-", "");
+                    if (arrowsToDelete.has(arrowId)) {
+                        allIdsToDelete.add(el.id);
+                    }
                 }
             }
 
-            newElements = newElements.filter((el) => !elementIdsToDelete.has(el.id));
+            newElements = newElements.filter((el) => !allIdsToDelete.has(el.id));
+        }
+
+        // 处理删除连线
+        if (result.edgesToDelete && result.edgesToDelete.length > 0) {
+            const edgeIdsToDelete = new Set(result.edgesToDelete);
+
+            // 找到选中的箭头元素
+            const arrowIdsToDelete = new Set<string>();
+            for (const el of currentElements) {
+                if (el.type === "arrow" && context.elementIds.includes(el.id)) {
+                    arrowIdsToDelete.add(el.id);
+                }
+            }
+
+            // 也删除箭头标签
+            const allIdsToDelete = new Set<string>(arrowIdsToDelete);
+            for (const arrowId of arrowIdsToDelete) {
+                allIdsToDelete.add(`label-${arrowId}`);
+            }
+
+            newElements = newElements.filter((el) => !allIdsToDelete.has(el.id));
         }
 
         // 更新画布
@@ -453,12 +660,12 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
                                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                                     <div
                                         className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${msg.role === "user"
-                                                ? "bg-blue-600 text-white"
-                                                : msg.status === "error"
-                                                    ? "bg-red-900/50 text-red-300"
-                                                    : msg.status === "streaming"
-                                                        ? "bg-slate-800 text-slate-400"
-                                                        : "bg-slate-800 text-slate-200"
+                                            ? "bg-blue-600 text-white"
+                                            : msg.status === "error"
+                                                ? "bg-red-900/50 text-red-300"
+                                                : msg.status === "streaming"
+                                                    ? "bg-slate-800 text-slate-400"
+                                                    : "bg-slate-800 text-slate-200"
                                             }`}
                                     >
                                         {msg.status === "streaming" && (
