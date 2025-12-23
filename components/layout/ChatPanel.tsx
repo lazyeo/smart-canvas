@@ -12,12 +12,26 @@ import {
 } from "@/lib/ai";
 import { getActiveApiKey } from "@/lib/storage";
 
+interface DiagramNode {
+    id: string;
+    type: string;
+    label: string;
+}
+
+interface DiagramEdge {
+    id: string;
+    source: string;
+    target: string;
+    label?: string;
+}
+
 interface Message {
     id: string;
     role: "user" | "ai";
     content: string;
     status?: "pending" | "streaming" | "success" | "error";
-    thinkingContent?: string;  // AI 的原始返回内容（JSON 等）
+    parsedNodes?: DiagramNode[];
+    parsedEdges?: DiagramEdge[];
     isThinkingExpanded?: boolean;
     nodeCount?: number;
     edgeCount?: number;
@@ -116,7 +130,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                     );
                 },
                 onComplete: (fullContent) => {
-                    // 解析响应
+                    // 输出标军。
                     const diagramData = parseDiagramJSON(fullContent);
 
                     if (diagramData) {
@@ -127,7 +141,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         const currentElements = getElements();
                         updateScene({ elements: [...currentElements, ...elements] });
 
-                        // 更新消息
+                        // 更新消息，存储解析后的数据
                         setMessages((prev) =>
                             prev.map((msg) =>
                                 msg.id === aiMsgId
@@ -135,7 +149,17 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                         ...msg,
                                         content: `已生成 ${diagramData.nodes.length} 个节点和 ${diagramData.edges.length} 条连线`,
                                         status: "success",
-                                        thinkingContent: fullContent,
+                                        parsedNodes: diagramData.nodes.map((n) => ({
+                                            id: n.id,
+                                            type: n.type,
+                                            label: n.label,
+                                        })),
+                                        parsedEdges: diagramData.edges.map((e) => ({
+                                            id: e.id,
+                                            source: e.source,
+                                            target: e.target,
+                                            label: e.label,
+                                        })),
                                         isThinkingExpanded: false,
                                         nodeCount: diagramData.nodes.length,
                                         edgeCount: diagramData.edges.length,
@@ -143,7 +167,6 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                     : msg
                             )
                         );
-
                         if (onSendMessage) {
                             onSendMessage(userMessage);
                         }
@@ -156,7 +179,6 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                         ...msg,
                                         content: "无法解析 AI 返回的图表数据",
                                         status: "error",
-                                        thinkingContent: fullContent,
                                         isThinkingExpanded: false,
                                     }
                                     : msg
@@ -217,12 +239,12 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                                     <div
                                         className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${msg.role === "user"
-                                                ? "bg-blue-600 text-white"
-                                                : msg.status === "error"
-                                                    ? "bg-red-900/50 text-red-300"
-                                                    : msg.status === "streaming"
-                                                        ? "bg-slate-800 text-slate-400"
-                                                        : "bg-slate-800 text-slate-200"
+                                            ? "bg-blue-600 text-white"
+                                            : msg.status === "error"
+                                                ? "bg-red-900/50 text-red-300"
+                                                : msg.status === "streaming"
+                                                    ? "bg-slate-800 text-slate-400"
+                                                    : "bg-slate-800 text-slate-200"
                                             }`}
                                     >
                                         {msg.status === "streaming" && (
@@ -235,8 +257,8 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                     </div>
                                 </div>
 
-                                {/* 可折叠的思考过程 */}
-                                {msg.thinkingContent && (
+                                {/* 可折叠的图表结构展示 */}
+                                {(msg.parsedNodes || msg.parsedEdges) && (
                                     <div className="ml-2">
                                         <button
                                             onClick={() => toggleThinking(msg.id)}
@@ -250,12 +272,10 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                             >
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                             </svg>
-                                            查看 AI 响应内容
+                                            查看图表结构
                                         </button>
                                         {msg.isThinkingExpanded && (
-                                            <div className="mt-2 p-2 bg-slate-950 rounded border border-slate-700 text-xs text-slate-400 font-mono max-h-48 overflow-y-auto whitespace-pre-wrap break-all">
-                                                {msg.thinkingContent}
-                                            </div>
+                                            <DiagramStructureView nodes={msg.parsedNodes || []} edges={msg.parsedEdges || []} />
                                         )}
                                     </div>
                                 )}
@@ -320,6 +340,73 @@ function SuggestionButton({ text, onClick }: SuggestionButtonProps) {
         >
             {text}
         </button>
+    );
+}
+
+/**
+ * 图表结构可视化组件
+ */
+interface DiagramStructureViewProps {
+    nodes: DiagramNode[];
+    edges: DiagramEdge[];
+}
+
+function DiagramStructureView({ nodes, edges }: DiagramStructureViewProps) {
+    // 创建节点 ID 到标签的映射
+    const nodeLabels = new Map(nodes.map((n) => [n.id, n.label]));
+
+    return (
+        <div className="mt-2 p-3 bg-slate-950 rounded border border-slate-700 text-xs max-h-64 overflow-y-auto space-y-3">
+            {/* 节点列表 */}
+            <div>
+                <div className="text-slate-400 font-medium mb-2 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={2} />
+                    </svg>
+                    节点 ({nodes.length})
+                </div>
+                <div className="space-y-1">
+                    {nodes.map((node, idx) => (
+                        <div key={node.id} className="flex items-center gap-2 text-slate-300">
+                            <span className="text-slate-500 w-4">{idx + 1}.</span>
+                            <span className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400 text-[10px]">
+                                {node.type}
+                            </span>
+                            <span className="truncate">{node.label}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* 连线列表 */}
+            {edges.length > 0 && (
+                <div>
+                    <div className="text-slate-400 font-medium mb-2 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                        连线 ({edges.length})
+                    </div>
+                    <div className="space-y-1">
+                        {edges.map((edge, idx) => (
+                            <div key={edge.id} className="flex items-center gap-1 text-slate-300 text-[11px]">
+                                <span className="text-slate-500 w-4">{idx + 1}.</span>
+                                <span className="truncate max-w-[80px]" title={nodeLabels.get(edge.source)}>
+                                    {nodeLabels.get(edge.source) || edge.source}
+                                </span>
+                                <span className="text-slate-500">→</span>
+                                <span className="truncate max-w-[80px]" title={nodeLabels.get(edge.target)}>
+                                    {nodeLabels.get(edge.target) || edge.target}
+                                </span>
+                                {edge.label && (
+                                    <span className="text-slate-500 italic truncate">({edge.label})</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
