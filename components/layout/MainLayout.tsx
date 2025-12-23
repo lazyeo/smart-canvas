@@ -8,15 +8,20 @@ import { ChatPanel } from "./ChatPanel";
 interface MainLayoutProps {
     children?: React.ReactNode;
     onSettingsClick?: () => void;
+    onAutoLayoutClick?: () => void;
 }
 
 export function MainLayout({
     children,
     onSettingsClick,
+    onAutoLayoutClick,
 }: MainLayoutProps) {
     return (
         <div className="h-screen flex flex-col bg-slate-900">
-            <Header onSettingsClick={onSettingsClick} />
+            <Header
+                onSettingsClick={onSettingsClick}
+                onAutoLayoutClick={onAutoLayoutClick}
+            />
 
             <div className="flex-1 flex overflow-hidden">
                 <CanvasContainer>{children}</CanvasContainer>

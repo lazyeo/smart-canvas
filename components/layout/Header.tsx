@@ -5,9 +5,10 @@ import { ExportButton, ImportButton } from "@/components/toolbar";
 
 interface HeaderProps {
   onSettingsClick?: () => void;
+  onAutoLayoutClick?: () => void;
 }
 
-export function Header({ onSettingsClick }: HeaderProps) {
+export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
   return (
     <header className="h-14 bg-slate-900 border-b border-slate-700 flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -18,6 +19,28 @@ export function Header({ onSettingsClick }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-1">
+        {/* 自动布局按钮 */}
+        <button
+          onClick={onAutoLayoutClick}
+          className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-sm"
+          title="自动布局"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
+            />
+          </svg>
+          <span className="hidden sm:inline">布局</span>
+        </button>
+
         <ImportButton />
         <ExportButton />
 
