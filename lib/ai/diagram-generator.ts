@@ -90,9 +90,23 @@ function calculatePosition(
 }
 
 /**
- * 创建节点元素
+ * 节点信息（用于生成过程中的数据传递）
  */
-function createNodeElement(
+interface NodeInfo {
+    elementId: string;
+    labelId: string;
+    groupId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    boundElements: Array<{ id: string; type: string }>;
+}
+
+/**
+ * 创建节点和标签元素（成组）
+ */
+function createNodeWithLabel(
     node: {
         id: string;
         type: string;
@@ -101,18 +115,29 @@ function createNodeElement(
         column: number;
     },
     moduleId: string
-): { element: ExcalidrawElement; shadowNode: ShadowNode } {
+): {
+    nodeElement: ExcalidrawElement;
+    labelElement: ExcalidrawElement;
+    shadowNode: ShadowNode;
+    nodeInfo: NodeInfo;
+} {
     const pos = calculatePosition(node.row, node.column);
     const shape = NODE_SHAPE_MAP[node.type] || "rectangle";
     const colors = NODE_COLOR_MAP[node.type] || NODE_COLOR_MAP.generic;
 
-    const elementId = generateId();
+    const nodeElementId = generateId();
+    const labelElementId = generateId();
+    const groupId = generateId();
     const now = Date.now();
 
-    // 创建 Excalidraw 元素（包含所有必需属性）
-    const element: ExcalidrawElement = {
+    // 文本尺寸计算
+    const textWidth = Math.max(node.label.length * 14, 50);
+    const textHeight = 25;
+
+    // 创建节点元素
+    const nodeElement: ExcalidrawElement = {
         ...createBaseElementProps(),
-        id: elementId,
+        id: nodeElementId,
         type: shape,
         x: pos.x,
         y: pos.y,
@@ -125,8 +150,8 @@ function createNodeElement(
         strokeStyle: "solid",
         roughness: 1,
         opacity: 100,
-        groupIds: [],
-        boundElements: null,
+        groupIds: [groupId],
+        boundElements: [],  // 将在后面更新
         locked: false,
         roundness: { type: 3 },
         customData: {
@@ -136,12 +161,47 @@ function createNodeElement(
         },
     };
 
+    // 创建标签元素（与节点成组）
+    const labelElement: ExcalidrawElement = {
+        ...createBaseElementProps(),
+        id: labelElementId,
+        type: "text",
+        x: pos.x + (LAYOUT_CONFIG.nodeWidth - textWidth) / 2,
+        y: pos.y + (LAYOUT_CONFIG.nodeHeight - textHeight) / 2,
+        width: textWidth,
+        height: textHeight,
+        strokeColor: "#1e1e1e",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [groupId],
+        boundElements: null,
+        locked: false,
+        roundness: null,
+        text: node.label,
+        fontSize: 16,
+        fontFamily: 1,
+        textAlign: "center",
+        verticalAlign: "middle",
+        containerId: null,
+        originalText: node.label,
+        autoResize: true,
+        lineHeight: 1.25,
+        customData: {
+            isLabel: true,
+            parentId: nodeElementId,
+        },
+    };
+
     // 创建影子节点
     const shadowNode: ShadowNode = {
         id: node.id,
         type: node.type as NodeType,
         label: node.label,
-        elementIds: [elementId],
+        elementIds: [nodeElementId, labelElementId],
         logicalPosition: { row: node.row, column: node.column },
         position: {
             x: pos.x,
@@ -154,67 +214,32 @@ function createNodeElement(
         updatedAt: now,
     };
 
-    return { element, shadowNode };
-}
-
-/**
- * 创建文本标签元素
- */
-function createLabelElement(
-    nodeElement: ExcalidrawElement,
-    label: string
-): ExcalidrawElement {
-    const textId = generateId();
-    const textWidth = Math.max(label.length * 14, 50);
-    const textHeight = 25;
-
-    return {
-        ...createBaseElementProps(),
-        id: textId,
-        type: "text",
-        x: nodeElement.x + (nodeElement.width - textWidth) / 2,
-        y: nodeElement.y + (nodeElement.height - textHeight) / 2,
-        width: textWidth,
-        height: textHeight,
-        strokeColor: "#1e1e1e",
-        backgroundColor: "transparent",
-        fillStyle: "solid",
-        strokeWidth: 1,
-        strokeStyle: "solid",
-        roughness: 1,
-        opacity: 100,
-        groupIds: [],
-        boundElements: null,
-        locked: false,
-        roundness: null,
-        text: label,
-        fontSize: 16,
-        fontFamily: 1,
-        textAlign: "center",
-        verticalAlign: "middle",
-        containerId: null,
-        originalText: label,
-        autoResize: true,
-        lineHeight: 1.25,
-        customData: {
-            isLabel: true,
-            parentId: nodeElement.id,
-        },
+    const nodeInfo: NodeInfo = {
+        elementId: nodeElementId,
+        labelId: labelElementId,
+        groupId: groupId,
+        x: pos.x,
+        y: pos.y,
+        width: LAYOUT_CONFIG.nodeWidth,
+        height: LAYOUT_CONFIG.nodeHeight,
+        boundElements: [],
     };
+
+    return { nodeElement, labelElement, shadowNode, nodeInfo };
 }
 
 /**
- * 创建连线元素
+ * 创建连线元素（带绑定）
  */
 function createEdgeElement(
     edge: { id: string; source: string; target: string; label?: string },
-    nodePositions: Map<string, { x: number; y: number; width: number; height: number }>,
+    nodeInfoMap: Map<string, NodeInfo>,
     moduleId: string
 ): { element: ExcalidrawElement; shadowEdge: ShadowEdge } | null {
-    const sourcePos = nodePositions.get(edge.source);
-    const targetPos = nodePositions.get(edge.target);
+    const sourceInfo = nodeInfoMap.get(edge.source);
+    const targetInfo = nodeInfoMap.get(edge.target);
 
-    if (!sourcePos || !targetPos) {
+    if (!sourceInfo || !targetInfo) {
         console.warn(`Edge ${edge.id} references non-existent nodes`);
         return null;
     }
@@ -222,13 +247,17 @@ function createEdgeElement(
     const elementId = generateId();
     const now = Date.now();
 
-    // 计算起点和终点
-    const startX = sourcePos.x + sourcePos.width / 2;
-    const startY = sourcePos.y + sourcePos.height;
-    const endX = targetPos.x + targetPos.width / 2;
-    const endY = targetPos.y;
+    // 计算起点和终点（从节点底部中心到目标节点顶部中心）
+    const startX = sourceInfo.x + sourceInfo.width / 2;
+    const startY = sourceInfo.y + sourceInfo.height;
+    const endX = targetInfo.x + targetInfo.width / 2;
+    const endY = targetInfo.y;
 
-    // 创建箭头元素（包含所有必需属性）
+    // 记录绑定关系
+    sourceInfo.boundElements.push({ id: elementId, type: "arrow" });
+    targetInfo.boundElements.push({ id: elementId, type: "arrow" });
+
+    // 创建箭头元素（带绑定）
     const element: ExcalidrawElement = {
         ...createBaseElementProps(),
         id: elementId,
@@ -252,8 +281,19 @@ function createEdgeElement(
             [0, 0],
             [endX - startX, endY - startY],
         ],
-        startBinding: null,
-        endBinding: null,
+        // 绑定到源节点和目标节点
+        startBinding: {
+            elementId: sourceInfo.elementId,
+            focus: 0,
+            gap: 1,
+            fixedPoint: null,
+        },
+        endBinding: {
+            elementId: targetInfo.elementId,
+            focus: 0,
+            gap: 1,
+            fixedPoint: null,
+        },
         lastCommittedPoint: null,
         startArrowhead: null,
         endArrowhead: "arrow",
@@ -305,38 +345,44 @@ export function generateExcalidrawElements(
     shadowNodes: ShadowNode[];
     shadowEdges: ShadowEdge[];
 } {
-    const elements: ExcalidrawElement[] = [];
+    const nodeElements: ExcalidrawElement[] = [];
+    const labelElements: ExcalidrawElement[] = [];
+    const edgeElements: ExcalidrawElement[] = [];
     const shadowNodes: ShadowNode[] = [];
     const shadowEdges: ShadowEdge[] = [];
-    const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
+    const nodeInfoMap = new Map<string, NodeInfo>();
 
-    // 创建节点
+    // 第一步：创建所有节点和标签
     for (const node of diagramData.nodes) {
-        const { element, shadowNode } = createNodeElement(node, moduleId);
-        elements.push(element);
+        const { nodeElement, labelElement, shadowNode, nodeInfo } = createNodeWithLabel(node, moduleId);
+        nodeElements.push(nodeElement);
+        labelElements.push(labelElement);
         shadowNodes.push(shadowNode);
-
-        // 创建标签
-        const labelElement = createLabelElement(element, node.label);
-        elements.push(labelElement);
-
-        // 记录位置
-        nodePositions.set(node.id, {
-            x: element.x,
-            y: element.y,
-            width: element.width,
-            height: element.height,
-        });
+        nodeInfoMap.set(node.id, nodeInfo);
     }
 
-    // 创建连线
+    // 第二步：创建所有连线（会更新 nodeInfo.boundElements）
     for (const edge of diagramData.edges) {
-        const result = createEdgeElement(edge, nodePositions, moduleId);
+        const result = createEdgeElement(edge, nodeInfoMap, moduleId);
         if (result) {
-            elements.push(result.element);
+            edgeElements.push(result.element);
             shadowEdges.push(result.shadowEdge);
         }
     }
+
+    // 第三步：更新节点的 boundElements 属性
+    for (const nodeElement of nodeElements) {
+        const nodeData = nodeElement.customData;
+        if (nodeData && nodeData.nodeId) {
+            const nodeInfo = nodeInfoMap.get(nodeData.nodeId as string);
+            if (nodeInfo && nodeInfo.boundElements.length > 0) {
+                nodeElement.boundElements = nodeInfo.boundElements;
+            }
+        }
+    }
+
+    // 合并所有元素：先节点，再标签，最后连线
+    const elements = [...nodeElements, ...labelElements, ...edgeElements];
 
     return { elements, shadowNodes, shadowEdges };
 }
