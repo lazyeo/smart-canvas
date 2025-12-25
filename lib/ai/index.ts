@@ -41,3 +41,13 @@ export {
     type ConversationHistory,
     type ConversationMessage,
 } from "./conversation-history";
+
+// 上下文压缩
+export {
+    compressNodes,
+    compressEdges,
+    compressExcalidrawContext,
+    generateCompressedPrompt,
+    expandShortId,
+    type CompressedContext,
+} from "./context-compression";
