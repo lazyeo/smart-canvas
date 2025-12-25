@@ -4,3 +4,4 @@ export { CanvasContainer } from "./CanvasContainer";
 export { ChatPanel } from "./ChatPanel";
 export { EditModePanel } from "./EditModePanel";
 export { MainLayout } from "./MainLayout";
+export { ModulePanel } from "./ModulePanel";
