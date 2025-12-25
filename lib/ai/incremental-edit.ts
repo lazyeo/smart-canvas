@@ -349,18 +349,24 @@ function extractSimpleOperation(response: string): IncrementalEditResult | null 
         };
     }
 
-    // 检测连线操作
+    // 检测连线操作（支持标签）
     if (lowerResponse.includes("连接") || lowerResponse.includes("连线") ||
         lowerResponse.includes("指向") || lowerResponse.includes("箭头")) {
+        // 尝试提取标签
+        const labelMatch = response.match(/[「"']([^「」"']+)[」"']/) ||
+            response.match(/标签[为是：:]\s*(\S+)/) ||
+            response.match(/叫[做作]?\s*(\S+)/);
+        const label = labelMatch ? labelMatch[1] : "";
+
         return {
             success: true,
             nodesToAdd: [],
             nodesToUpdate: [],
             nodesToDelete: [],
-            edgesToAdd: [{ id: `edge-${Date.now()}`, sourceNodeId: "selected-0", targetNodeId: "selected-1", label: "" }],
+            edgesToAdd: [{ id: `edge-${Date.now()}`, sourceNodeId: "selected-0", targetNodeId: "selected-1", label }],
             edgesToUpdate: [],
             edgesToDelete: [],
-            explanation: "在选中的两个节点之间添加连线",
+            explanation: label ? `添加标签为"${label}"的连线` : "在选中的两个节点之间添加连线",
         };
     }
 
