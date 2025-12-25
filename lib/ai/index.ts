@@ -29,3 +29,15 @@ export {
     type IncrementalEditRequest,
     type IncrementalEditResult,
 } from "./incremental-edit";
+
+// 对话历史管理
+export {
+    createConversationHistory,
+    addMessage,
+    historyToMessages,
+    getMessageCount,
+    hasSummary,
+    clearHistory,
+    type ConversationHistory,
+    type ConversationMessage,
+} from "./conversation-history";

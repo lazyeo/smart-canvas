@@ -14,6 +14,10 @@ import {
     IncrementalEditService,
     IncrementalEditResult,
     SelectionContext,
+    createConversationHistory,
+    addMessage,
+    historyToMessages,
+    ConversationHistory,
 } from "@/lib/ai";
 import { getActiveApiKey } from "@/lib/storage";
 import { ShadowNode } from "@/types";
@@ -55,6 +59,9 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { updateScene, getElements, selectedElementIds } = useCanvas();
     const { setDrawioXml } = useEngine();
+
+    // 对话历史管理
+    const conversationHistoryRef = useRef<ConversationHistory>(createConversationHistory());
 
     // 计算选中状态和位置
     const selectionInfo = useMemo(() => {
@@ -499,11 +506,18 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         const diagramType = detectDiagramType(userMessage);
         const prompt = buildDiagramPrompt(userMessage, diagramType);
 
-        // 流式调用 LLM
+        // 添加用户消息到历史
+        conversationHistoryRef.current = addMessage(conversationHistoryRef.current, "user", userMessage);
+
+        // 构建包含历史的消息列表
+        const historyMessages = historyToMessages(conversationHistoryRef.current);
+
+        // 流式调用 LLM（包含历史）
         await chatStream(
             [
                 { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: prompt },
+                ...historyMessages.slice(0, -1), // 历史消息（不含当前）
+                { role: "user", content: prompt }, // 当前请求使用完整 prompt
             ],
             {
                 onToken: (token, accumulated) => {
@@ -576,6 +590,11 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                     : msg
                             )
                         );
+
+                        // 添加 AI 响应到历史
+                        const aiResponse = `已生成 ${diagramData.nodes.length} 个节点和 ${diagramData.edges.length} 条连线`;
+                        conversationHistoryRef.current = addMessage(conversationHistoryRef.current, "assistant", aiResponse);
+
                         if (onSendMessage) {
                             onSendMessage(userMessage);
                         }
