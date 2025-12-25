@@ -15,6 +15,7 @@ import {
     getDefaultModel,
     LLMProvider,
 } from "@/lib/storage";
+import { useTranslation } from "@/lib/i18n";
 
 const PROVIDERS: LLMProvider[] = ["openai", "anthropic", "gemini"];
 
@@ -45,6 +46,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
     const [inputModel, setInputModel] = useState("");
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const { t } = useTranslation();
 
     // 加载已保存的 Keys
     useEffect(() => {
@@ -91,7 +93,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
 
     const handleSave = (provider: LLMProvider) => {
         if (inputKey.trim() === "") {
-            setMessage({ type: "error", text: "API Key 不能为空" });
+            setMessage({ type: "error", text: t("apiKey.apiKeyEmpty") });
             return;
         }
 
@@ -108,7 +110,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
             setInputBaseUrl("");
             setInputModel("");
             setShowAdvanced(false);
-            setMessage({ type: "success", text: "保存成功" });
+            setMessage({ type: "success", text: t("apiKey.saveSuccess") });
 
             // 如果是第一个 Key，自动设为活跃
             if (activeProvider === null) {
@@ -117,7 +119,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
 
             setTimeout(() => setMessage(null), 2000);
         } else {
-            setMessage({ type: "error", text: "保存失败" });
+            setMessage({ type: "error", text: t("apiKey.saveFailed") });
         }
     };
 
@@ -131,7 +133,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                 const config = getApiKeysConfig();
                 setActiveProviderState(config.activeProvider);
             }
-            setMessage({ type: "success", text: "删除成功" });
+            setMessage({ type: "success", text: t("apiKey.deleteSuccess") });
             setTimeout(() => setMessage(null), 2000);
         }
     };
@@ -140,7 +142,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         const success = setActiveProvider(provider);
         if (success) {
             setActiveProviderState(provider);
-            setMessage({ type: "success", text: `已切换到 ${getProviderDisplayName(provider)}` });
+            setMessage({ type: "success", text: t("apiKey.switchedTo", { provider: getProviderDisplayName(provider) }) });
             setTimeout(() => setMessage(null), 2000);
         }
     };
@@ -157,7 +159,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-slate-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between p-4 border-b border-slate-700">
-                    <h2 className="text-lg font-semibold text-white">API Key 设置</h2>
+                    <h2 className="text-lg font-semibold text-white">{t("apiKey.title")}</h2>
                     <button
                         onClick={onClose}
                         className="text-slate-400 hover:text-white transition-colors"
@@ -172,8 +174,8 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                     {message !== null && (
                         <div
                             className={`px-3 py-2 rounded-lg text-sm ${message.type === "success"
-                                    ? "bg-green-900/50 text-green-300"
-                                    : "bg-red-900/50 text-red-300"
+                                ? "bg-green-900/50 text-green-300"
+                                : "bg-red-900/50 text-red-300"
                                 }`}
                         >
                             {message.text}
@@ -181,7 +183,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                     )}
 
                     <p className="text-sm text-slate-400">
-                        配置您的 LLM API Key，支持自定义 Base URL 和模型名称。
+                        {t("apiKey.description")}
                     </p>
 
                     <div className="space-y-3">
@@ -189,8 +191,8 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                             <div
                                 key={provider}
                                 className={`p-3 rounded-lg border transition-colors ${activeProvider === provider
-                                        ? "border-blue-500 bg-blue-900/20"
-                                        : "border-slate-700 bg-slate-900/50"
+                                    ? "border-blue-500 bg-blue-900/20"
+                                    : "border-slate-700 bg-slate-900/50"
                                     }`}
                             >
                                 <div className="flex items-center justify-between mb-2">
@@ -200,7 +202,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                         </span>
                                         {activeProvider === provider && (
                                             <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
-                                                当前使用
+                                                {t("apiKey.currentlyUsing")}
                                             </span>
                                         )}
                                     </div>
@@ -209,7 +211,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                             onClick={() => handleSetActive(provider)}
                                             className="text-xs text-blue-400 hover:text-blue-300"
                                         >
-                                            设为默认
+                                            {t("apiKey.setDefault")}
                                         </button>
                                     )}
                                 </div>
@@ -240,14 +242,14 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                             >
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                             </svg>
-                                            高级设置
+                                            {t("apiKey.advancedSettings")}
                                         </button>
 
                                         {showAdvanced && (
                                             <div className="space-y-3">
                                                 <div>
                                                     <label className="block text-xs text-slate-400 mb-1">
-                                                        模型名称
+                                                        {t("apiKey.model")}
                                                     </label>
                                                     <input
                                                         type="text"
@@ -259,7 +261,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs text-slate-400 mb-1">
-                                                        Base URL（可选，留空使用官方地址）
+                                                        {t("apiKey.baseUrl")}
                                                     </label>
                                                     <input
                                                         type="text"
@@ -269,7 +271,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                         className="w-full bg-slate-800 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500 font-mono text-xs"
                                                     />
                                                     <p className="text-xs text-slate-500 mt-1">
-                                                        支持第三方 API 代理或本地部署的兼容服务
+                                                        {t("apiKey.baseUrlHint")}
                                                     </p>
                                                 </div>
                                             </div>
@@ -280,13 +282,13 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                 onClick={() => handleSave(provider)}
                                                 className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
                                             >
-                                                保存
+                                                {t("apiKey.save")}
                                             </button>
                                             <button
                                                 onClick={handleCancel}
                                                 className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded transition-colors"
                                             >
-                                                取消
+                                                {t("apiKey.cancel")}
                                             </button>
                                         </div>
                                     </div>
@@ -303,13 +305,13 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                             onClick={() => handleStartEdit(provider)}
                                                             className="text-xs text-slate-400 hover:text-white"
                                                         >
-                                                            修改
+                                                            {t("apiKey.modify")}
                                                         </button>
                                                         <button
                                                             onClick={() => handleDelete(provider)}
                                                             className="text-xs text-red-400 hover:text-red-300"
                                                         >
-                                                            删除
+                                                            {t("apiKey.delete")}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -329,7 +331,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                                                 onClick={() => handleStartEdit(provider)}
                                                 className="text-sm text-blue-400 hover:text-blue-300"
                                             >
-                                                + 添加 API Key
+                                                {t("apiKey.addApiKey")}
                                             </button>
                                         )}
                                     </div>
@@ -344,7 +346,7 @@ export function ApiKeyManager({ onClose }: ApiKeyManagerProps) {
                         onClick={onClose}
                         className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
                     >
-                        关闭
+                        {t("apiKey.close")}
                     </button>
                 </div>
             </div>
