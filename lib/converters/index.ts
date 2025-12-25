@@ -6,3 +6,11 @@ export {
     generateDrawioXml,
     generateEmptyDrawioXml,
 } from "./drawio-converter";
+
+export {
+    extractMermaidCode,
+    convertMermaidToElements,
+    containsMermaidCode,
+    detectMermaidType,
+    type MermaidDiagramType,
+} from "./mermaid-converter";

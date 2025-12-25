@@ -6,17 +6,17 @@
 import { Language, getCurrentLanguage } from "@/lib/i18n";
 
 export type DiagramType =
-    | "flowchart"
-    | "architecture"
-    | "sequence"
-    | "mindmap"
-    | "er"
-    | "class"
-    | "generic";
+  | "flowchart"
+  | "architecture"
+  | "sequence"
+  | "mindmap"
+  | "er"
+  | "class"
+  | "generic";
 
 // 多语言系统提示词
 const SYSTEM_PROMPTS: Record<Language, string> = {
-    zh: `你是一个专业的图表设计助手。你的任务是根据用户的描述生成图表元素数据。
+  zh: `你是一个专业的图表设计助手。你的任务是根据用户的描述生成图表元素数据。
 
 ## 输出格式要求
 你必须输出 JSON 格式的图表数据，包含 nodes（节点）和 edges（连线）两个数组。
@@ -64,7 +64,7 @@ const SYSTEM_PROMPTS: Record<Language, string> = {
 4. 标签使用简洁的中文
 `,
 
-    en: `You are a professional diagram design assistant. Your task is to generate diagram element data based on user descriptions.
+  en: `You are a professional diagram design assistant. Your task is to generate diagram element data based on user descriptions.
 
 ## Output Format Requirements
 You must output JSON format diagram data containing nodes and edges arrays.
@@ -117,60 +117,131 @@ You must output JSON format diagram data containing nodes and edges arrays.
  * 获取当前语言的系统提示词
  */
 export function getSystemPrompt(lang?: Language): string {
-    const language = lang || getCurrentLanguage();
-    return SYSTEM_PROMPTS[language];
+  const language = lang || getCurrentLanguage();
+  return SYSTEM_PROMPTS[language];
 }
 
 // 默认系统提示词（向后兼容）
 export const SYSTEM_PROMPT = SYSTEM_PROMPTS.zh;
 
+// Mermaid 模式系统提示词
+const MERMAID_SYSTEM_PROMPTS: Record<Language, string> = {
+  zh: `你是一个专业的图表生成助手。使用 Mermaid 语法输出图表。
+
+## 支持的图表类型
+- flowchart TD（流程图，从上到下）
+- flowchart LR（流程图，从左到右）
+- sequenceDiagram（时序图）
+- classDiagram（类图）
+
+## 节点形状
+- [文字] 矩形
+- (文字) 圆角矩形
+- {文字} 菱形
+- ((文字)) 圆形
+
+## 示例
+\`\`\`mermaid
+flowchart TD
+    A[开始] --> B{判断条件}
+    B -->|是| C[处理步骤]
+    B -->|否| D[其他处理]
+    C --> E[结束]
+    D --> E
+\`\`\`
+
+## 规则
+1. 只输出 Mermaid 代码块
+2. 使用中文标签
+3. 流程图默认用 TD（从上到下）
+4. 不要添加任何解释`,
+
+  en: `You are a professional diagram generation assistant. Output diagrams using Mermaid syntax.
+
+## Supported Diagram Types
+- flowchart TD (flowchart, top to bottom)
+- flowchart LR (flowchart, left to right)
+- sequenceDiagram (sequence diagram)
+- classDiagram (class diagram)
+
+## Node Shapes
+- [text] rectangle
+- (text) rounded rectangle
+- {text} diamond
+- ((text)) circle
+
+## Example
+\`\`\`mermaid
+flowchart TD
+    A[Start] --> B{Condition}
+    B -->|Yes| C[Process]
+    B -->|No| D[Other]
+    C --> E[End]
+    D --> E
+\`\`\`
+
+## Rules
+1. Output only Mermaid code block
+2. Use English labels
+3. Flowcharts default to TD (top to bottom)
+4. Do not add any explanations`,
+};
+
+/**
+ * 获取当前语言的 Mermaid 系统提示词
+ */
+export function getMermaidSystemPrompt(lang?: Language): string {
+  const language = lang || getCurrentLanguage();
+  return MERMAID_SYSTEM_PROMPTS[language];
+}
+
 // 图表类型特定的提示
 const DIAGRAM_TYPE_PROMPTS: Record<DiagramType, string> = {
-    flowchart: `生成流程图。使用以下节点类型：
+  flowchart: `生成流程图。使用以下节点类型：
 - start: 开始节点（椭圆形）
 - end: 结束节点（椭圆形）
 - process: 处理步骤（矩形）
 - decision: 判断/分支（菱形）
 - data: 数据/文档（平行四边形）`,
 
-    architecture: `生成系统架构图。使用以下节点类型：
+  architecture: `生成系统架构图。使用以下节点类型：
 - component: 系统组件（矩形）
 - container: 容器/分组（大矩形）
 - entity: 外部实体（矩形）
 - data: 数据存储（圆柱形）`,
 
-    sequence: `生成时序图。使用以下节点类型：
+  sequence: `生成时序图。使用以下节点类型：
 - actor: 参与者/角色
 消息用 edges 表示，按时间顺序排列 (row 递增)`,
 
-    mindmap: `生成思维导图。使用以下规则：
+  mindmap: `生成思维导图。使用以下规则：
 - 中心主题放在 row=0, column=0
 - 子主题按层级向外扩展
 - 使用 process 类型表示节点`,
 
-    er: `生成 ER 图（实体关系图）。使用以下节点类型：
+  er: `生成 ER 图（实体关系图）。使用以下节点类型：
 - entity: 实体表
 - 在 description 中列出实体的属性
 连线表示关系，label 说明关系类型（一对多等）`,
 
-    class: `生成类图。使用以下节点类型：
+  class: `生成类图。使用以下节点类型：
 - entity: 类
 - 在 description 中列出类的属性和方法
 连线类型说明关系（继承、组合等）`,
 
-    generic: `生成通用图表。根据内容自动选择合适的节点类型和布局。`,
+  generic: `生成通用图表。根据内容自动选择合适的节点类型和布局。`,
 };
 
 /**
  * 生成图表生成的 prompt
  */
 export function buildDiagramPrompt(
-    userDescription: string,
-    diagramType: DiagramType = "generic"
+  userDescription: string,
+  diagramType: DiagramType = "generic"
 ): string {
-    const typePrompt = DIAGRAM_TYPE_PROMPTS[diagramType];
+  const typePrompt = DIAGRAM_TYPE_PROMPTS[diagramType];
 
-    return `${typePrompt}
+  return `${typePrompt}
 
 用户需求：
 ${userDescription}
@@ -182,14 +253,14 @@ ${userDescription}
  * 生成增量修改的 prompt
  */
 export function buildModifyPrompt(
-    currentNodes: Array<{ id: string; label: string; type: string }>,
-    currentEdges: Array<{ id: string; source: string; target: string; label?: string }>,
-    selectedNodeIds: string[],
-    modifyRequest: string
+  currentNodes: Array<{ id: string; label: string; type: string }>,
+  currentEdges: Array<{ id: string; source: string; target: string; label?: string }>,
+  selectedNodeIds: string[],
+  modifyRequest: string
 ): string {
-    const selectedNodes = currentNodes.filter((n) => selectedNodeIds.includes(n.id));
+  const selectedNodes = currentNodes.filter((n) => selectedNodeIds.includes(n.id));
 
-    return `当前图表状态：
+  return `当前图表状态：
 节点：${JSON.stringify(currentNodes, null, 2)}
 连线：${JSON.stringify(currentEdges, null, 2)}
 
@@ -204,37 +275,37 @@ export function buildModifyPrompt(
  * 解析 LLM 输出的 JSON
  */
 export function parseDiagramJSON(content: string): {
-    nodes: Array<{
-        id: string;
-        type: string;
-        label: string;
-        description?: string;
-        row: number;
-        column: number;
-    }>;
-    edges: Array<{
-        id: string;
-        source: string;
-        target: string;
-        label?: string;
-    }>;
+  nodes: Array<{
+    id: string;
+    type: string;
+    label: string;
+    description?: string;
+    row: number;
+    column: number;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    label?: string;
+  }>;
 } | null {
-    try {
-        // 尝试提取 JSON 块
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim();
+  try {
+    // 尝试提取 JSON 块
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim();
 
-        const data = JSON.parse(jsonStr);
+    const data = JSON.parse(jsonStr);
 
-        // 验证数据结构
-        if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
-            console.error("Invalid diagram JSON structure");
-            return null;
-        }
-
-        return data;
-    } catch (error) {
-        console.error("Failed to parse diagram JSON:", error);
-        return null;
+    // 验证数据结构
+    if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+      console.error("Invalid diagram JSON structure");
+      return null;
     }
+
+    return data;
+  } catch (error) {
+    console.error("Failed to parse diagram JSON:", error);
+    return null;
+  }
 }

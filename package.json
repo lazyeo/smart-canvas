@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/mermaid-to-excalidraw": "^2.0.0",
     "@types/dagre": "^0.7.53",
     "dagre": "^0.8.5",
     "idb": "^8.0.3",
