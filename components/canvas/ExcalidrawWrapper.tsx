@@ -1,12 +1,13 @@
 "use client";
 
-// 导入 Excalidraw 样式
+// Import Excalidraw styles
 import "@excalidraw/excalidraw/index.css";
 
 import React, { useRef, useCallback, forwardRef, useImperativeHandle, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 
-// 动态导入 Excalidraw 组件（客户端渲染）
+// Dynamic import Excalidraw component (client-side rendering)
+// Note: Cannot use useTranslation here since it's in the loading callback
 const Excalidraw = dynamic(
     async () => {
         const mod = await import("@excalidraw/excalidraw");
@@ -16,7 +17,7 @@ const Excalidraw = dynamic(
         ssr: false,
         loading: () => (
             <div className="flex items-center justify-center h-full bg-slate-100">
-                <div className="text-slate-500">加载画布中...</div>
+                <div className="text-slate-500">Loading canvas...</div>
             </div>
         ),
     }
