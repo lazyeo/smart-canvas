@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useCanvas } from "@/contexts";
+import { useTranslation } from "@/lib/i18n";
 
 interface Module {
     id: string;
@@ -28,6 +29,7 @@ const MODULE_COLORS = [
 export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelProps) {
     const { getElements, selectedElementIds } = useCanvas();
     const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+    const { t } = useTranslation();
 
     // 从画布元素提取模块
     const modules = useMemo(() => {
@@ -48,7 +50,7 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
                 if (!moduleMap.has(defaultId)) {
                     moduleMap.set(defaultId, {
                         id: defaultId,
-                        name: "未分组",
+                        name: t("module.ungrouped"),
                         nodeIds: [],
                         color: "#6b7280",
                     });
@@ -58,7 +60,7 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
                 if (!moduleMap.has(groupId)) {
                     moduleMap.set(groupId, {
                         id: groupId,
-                        name: `模块 ${moduleMap.size + 1}`,
+                        name: `${t("module.modulePrefix")} ${moduleMap.size + 1}`,
                         nodeIds: [],
                         color: MODULE_COLORS[colorIndex % MODULE_COLORS.length],
                     });
@@ -86,7 +88,7 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
     if (modules.length === 0) {
         return (
             <div className="p-3 text-sm text-slate-400 text-center">
-                暂无模块
+                {t("module.noModules")}
             </div>
         );
     }
@@ -94,7 +96,7 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
     return (
         <div className="p-2 space-y-1">
             <div className="text-xs text-slate-400 px-2 py-1">
-                模块 ({modules.length})
+                {t("module.title")} ({modules.length})
             </div>
 
             {modules.map((module) => {
@@ -155,7 +157,7 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
                                             if (onSelectModule) onSelectModule(module);
                                         }}
                                     >
-                                        选中全部
+                                        {t("module.selectAll")}
                                     </button>
                                     <button
                                         className="flex-1 text-xs py-1 px-2 bg-blue-600 hover:bg-blue-500 rounded text-white transition-colors"
@@ -164,13 +166,13 @@ export function ModulePanel({ onSelectModule, onRegenerateModule }: ModulePanelP
                                             if (onRegenerateModule) onRegenerateModule(module);
                                         }}
                                     >
-                                        重新生成
+                                        {t("module.regenerate")}
                                     </button>
                                 </div>
 
                                 {/* 节点列表 */}
                                 <div className="text-xs text-slate-400 pt-1">
-                                    节点: {module.nodeIds.length} 个
+                                    {t("module.nodeCount")}: {module.nodeIds.length}
                                 </div>
                             </div>
                         )}

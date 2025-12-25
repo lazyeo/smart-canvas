@@ -3,10 +3,12 @@
 import React, { useState, useRef } from "react";
 import { useCanvas } from "@/contexts";
 import { exportToJSON, exportToPNG, exportToSVG, importFromJSON } from "@/lib/canvas";
+import { useTranslation } from "@/lib/i18n";
 
 export function ExportButton() {
     const { getElements } = useCanvas();
     const [showMenu, setShowMenu] = useState(false);
+    const { t } = useTranslation();
 
     const handleExportJSON = () => {
         const elements = getElements();
@@ -35,7 +37,7 @@ export function ExportButton() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                导出
+                {t("common.export")}
             </button>
 
             {showMenu && (
@@ -44,19 +46,19 @@ export function ExportButton() {
                         onClick={handleExportJSON}
                         className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700"
                     >
-                        导出 JSON
+                        {t("exportImport.exportJson")}
                     </button>
                     <button
                         onClick={handleExportPNG}
                         className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700"
                     >
-                        导出 PNG
+                        {t("exportImport.exportPng")}
                     </button>
                     <button
                         onClick={handleExportSVG}
                         className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700"
                     >
-                        导出 SVG
+                        {t("exportImport.exportSvg")}
                     </button>
                 </div>
             )}
@@ -67,6 +69,7 @@ export function ExportButton() {
 export function ImportButton() {
     const { updateScene } = useCanvas();
     const inputRef = useRef<HTMLInputElement>(null);
+    const { t } = useTranslation();
 
     const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -79,10 +82,9 @@ export function ImportButton() {
             updateScene({ elements });
         } catch (error) {
             console.error("Import failed:", error);
-            alert("导入失败：文件格式不正确");
+            alert(t("exportImport.importFailed"));
         }
 
-        // 重置 input
         if (inputRef.current !== null) {
             inputRef.current.value = "";
         }
@@ -104,7 +106,7 @@ export function ImportButton() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                导入
+                {t("common.import")}
             </button>
         </>
     );
