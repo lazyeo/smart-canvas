@@ -263,19 +263,72 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         const currentElements = getElements();
         let newElements = [...currentElements];
 
-        // 修改文字
+        // 修改文字（支持多节点）
         if (result.nodesToUpdate.length > 0) {
-            for (const update of result.nodesToUpdate) {
+            // 获取选中的形状元素
+            const selectedShapes = selectionInfo?.selectedElements?.filter(
+                (el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond"
+            ) || [];
+
+            // 获取选中的文本元素
+            const selectedTexts = newElements.filter(
+                (el) => el.type === "text" && selectedElementIds.includes(el.id)
+            );
+
+            for (let idx = 0; idx < result.nodesToUpdate.length; idx++) {
+                const update = result.nodesToUpdate[idx];
                 if (update.changes.label) {
-                    // 更新选中的文本元素
-                    for (let i = 0; i < newElements.length; i++) {
-                        const el = newElements[i];
-                        if (el.type === "text" && selectedElementIds.includes(el.id)) {
-                            newElements[i] = {
-                                ...el,
+                    // 尝试按索引匹配
+                    const targetText = selectedTexts[idx];
+                    if (targetText) {
+                        const textIndex = newElements.findIndex((el) => el.id === targetText.id);
+                        if (textIndex !== -1) {
+                            newElements[textIndex] = {
+                                ...newElements[textIndex],
                                 text: update.changes.label,
                                 originalText: update.changes.label,
-                                version: (el.version || 0) + 1,
+                                version: (newElements[textIndex].version || 0) + 1,
+                            };
+                        }
+                    } else if (idx < selectedShapes.length) {
+                        // 如果没有直接选中文本，尝试找形状关联的文本
+                        const shape = selectedShapes[idx];
+                        const groupId = shape.groupIds?.[0];
+                        if (groupId) {
+                            for (let i = 0; i < newElements.length; i++) {
+                                const el = newElements[i];
+                                if (el.type === "text" && el.groupIds?.includes(groupId)) {
+                                    newElements[i] = {
+                                        ...el,
+                                        text: update.changes.label,
+                                        originalText: update.changes.label,
+                                        version: (el.version || 0) + 1,
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 支持修改节点形状
+                if (update.changes.type && idx < selectedShapes.length) {
+                    const shape = selectedShapes[idx];
+                    const shapeIndex = newElements.findIndex((el) => el.id === shape.id);
+                    if (shapeIndex !== -1) {
+                        const typeMap: Record<string, string> = {
+                            process: "rectangle",
+                            decision: "diamond",
+                            start: "ellipse",
+                            end: "ellipse",
+                            data: "rectangle",
+                        };
+                        const newType = typeMap[update.changes.type] || update.changes.type;
+                        if (["rectangle", "ellipse", "diamond"].includes(newType)) {
+                            newElements[shapeIndex] = {
+                                ...newElements[shapeIndex],
+                                type: newType as "rectangle" | "ellipse" | "diamond",
+                                version: (newElements[shapeIndex].version || 0) + 1,
                             };
                         }
                     }

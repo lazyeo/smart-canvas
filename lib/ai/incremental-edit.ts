@@ -4,7 +4,7 @@
  */
 
 import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
-import { ShadowNode, ShadowEdge } from "@/types";
+import { ShadowNode, ShadowEdge, NodeType } from "@/types";
 import { SelectionContext } from "./selection-context";
 import { chatStream, LLMMessage, StreamCallbacks } from "./llm-client";
 
@@ -59,7 +59,6 @@ export interface IncrementalEditResult {
     // 错误信息
     error?: string;
 }
-
 /**
  * 增量编辑系统提示词
  */
@@ -70,29 +69,34 @@ const INCREMENTAL_EDIT_SYSTEM_PROMPT = `你是一个专业的图表编辑助手�
 请返回以下 JSON 格式：
 \`\`\`json
 {
-  "operation": "modify|add|delete|connect|disconnect|restyle|relayout",
+  "operation": "modify|add|delete|connect|disconnect|restyle",
   "explanation": "对操作的简短说明",
   "nodesToAdd": [
-    {"id": "new-1", "type": "process", "label": "新节点", "row": 0, "column": 0}
+    {"id": "new-1", "type": "process", "label": "新节点"}
   ],
   "nodesToUpdate": [
-    {"id": "existing-id", "changes": {"label": "新标签"}}
+    {"id": "A", "changes": {"label": "新标签", "type": "decision"}}
   ],
-  "nodesToDelete": ["node-id-1"],
+  "nodesToDelete": ["A"],
   "edgesToAdd": [
-    {"id": "edge-1", "source": "node-a", "target": "node-b", "label": "可选标签"}
+    {"id": "edge-1", "sourceNodeId": "A", "targetNodeId": "B", "label": "可选标签"}
   ],
   "edgesToUpdate": [
     {"id": "edge-id", "changes": {"label": "新标签"}}
   ],
-  "edgesToDelete": ["edge-id-1"]
+  "edgesToDelete": ["edge-1"]
 }
 \`\`\`
 
+## 节点类型
+- process: 矩形（处理步骤）
+- decision: 菱形（判断分支）
+- start/end: 椭圆（开始/结束）
+
 ## 规则
-1. 只返回需要变化的部分，不要返回未改变的节点/连线
-2. 新增节点需要指定 row/column 逻辑位置
-3. 删除节点时，相关连线会自动删除
+1. 只返回需要变化的部分
+2. 修改多个节点时，按选中顺序返回多个 nodesToUpdate
+3. 修改形状时使用 changes.type
 4. 始终用中文解释操作
 5. 只返回 JSON，不要其他内容`;
 
@@ -321,6 +325,28 @@ function extractSimpleOperation(response: string): IncrementalEditResult | null 
                 explanation: `修改文字为: ${newLabel}`,
             };
         }
+    }
+
+    // 检测形状修改操作
+    if (lowerResponse.includes("菱形") || lowerResponse.includes("判断") ||
+        lowerResponse.includes("椭圆") || lowerResponse.includes("圆形") ||
+        lowerResponse.includes("矩形") || lowerResponse.includes("方形")) {
+        let newType: NodeType = "process";
+        if (lowerResponse.includes("菱形") || lowerResponse.includes("判断")) {
+            newType = "decision";
+        } else if (lowerResponse.includes("椭圆") || lowerResponse.includes("圆形")) {
+            newType = "start";
+        }
+        return {
+            success: true,
+            nodesToAdd: [],
+            nodesToUpdate: [{ id: "selected", changes: { type: newType } }],
+            nodesToDelete: [],
+            edgesToAdd: [],
+            edgesToUpdate: [],
+            edgesToDelete: [],
+            explanation: `将节点形状修改为 ${newType}`,
+        };
     }
 
     // 检测连线操作
