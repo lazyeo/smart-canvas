@@ -97,9 +97,49 @@ const INCREMENTAL_EDIT_SYSTEM_PROMPT = `你是一个专业的图表编辑助手�
 5. 只返回 JSON，不要其他内容`;
 
 /**
- * 构建增量编辑 Prompt
+ * 构建增量编辑 Prompt（压缩版 - 差量传输）
+ * 只传输选中节点 + 直接邻居，使用短 ID 格式
  */
 export function buildIncrementalEditPrompt(request: IncrementalEditRequest): string {
+    const parts: string[] = [];
+
+    // 使用压缩格式
+    parts.push("## 当前上下文（压缩格式）");
+
+    // 选中节点（使用短 ID）
+    if (request.context.nodes.length > 0) {
+        const nodeStrs = request.context.nodes.map((n, i) => {
+            const shortId = String.fromCharCode(65 + i); // A, B, C...
+            const typeSymbol = n.type === "decision" ? "<>" : n.type === "start" || n.type === "end" ? "()" : "[]";
+            const label = n.label.length > 12 ? n.label.slice(0, 12) + "..." : n.label;
+            return `${shortId}${typeSymbol[0]}${label}${typeSymbol[1]}`;
+        });
+        parts.push(`选中: ${nodeStrs.join(" ")}`);
+    }
+
+    // 相关连线（简化格式）
+    if (request.context.relatedEdges.length > 0) {
+        const edgeStrs = request.context.relatedEdges.map(e => {
+            const srcNode = request.context.nodes.find(n => n.id === e.sourceNodeId);
+            const tgtNode = request.context.nodes.find(n => n.id === e.targetNodeId);
+            const srcLabel = srcNode ? srcNode.label.slice(0, 6) : "?";
+            const tgtLabel = tgtNode ? tgtNode.label.slice(0, 6) : "?";
+            return `${srcLabel}→${tgtLabel}`;
+        });
+        parts.push(`连线: ${edgeStrs.join(" ")}`);
+    }
+
+    // 用户指令
+    parts.push("");
+    parts.push(`指令: ${request.instruction}`);
+
+    return parts.join("\n");
+}
+
+/**
+ * 构建增量编辑 Prompt（完整版 - 兼容旧格式）
+ */
+export function buildIncrementalEditPromptFull(request: IncrementalEditRequest): string {
     const parts: string[] = [];
 
     // 上下文信息
