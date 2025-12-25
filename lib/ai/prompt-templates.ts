@@ -3,6 +3,8 @@
  * 用于生成各类图表的 Prompt
  */
 
+import { Language, getCurrentLanguage } from "@/lib/i18n";
+
 export type DiagramType =
     | "flowchart"
     | "architecture"
@@ -12,8 +14,9 @@ export type DiagramType =
     | "class"
     | "generic";
 
-// 系统提示词 - 定义 AI 的角色和输出格式
-export const SYSTEM_PROMPT = `你是一个专业的图表设计助手。你的任务是根据用户的描述生成图表元素数据。
+// 多语言系统提示词
+const SYSTEM_PROMPTS: Record<Language, string> = {
+    zh: `你是一个专业的图表设计助手。你的任务是根据用户的描述生成图表元素数据。
 
 ## 输出格式要求
 你必须输出 JSON 格式的图表数据，包含 nodes（节点）和 edges（连线）两个数组。
@@ -59,7 +62,67 @@ export const SYSTEM_PROMPT = `你是一个专业的图表设计助手。你的�
 2. 确保所有 id 唯一
 3. 确保连线的 source 和 target 引用存在的节点 id
 4. 标签使用简洁的中文
-`;
+`,
+
+    en: `You are a professional diagram design assistant. Your task is to generate diagram element data based on user descriptions.
+
+## Output Format Requirements
+You must output JSON format diagram data containing nodes and edges arrays.
+
+### Node Format
+\`\`\`json
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "process|decision|start|end|data|entity|actor|component|container",
+      "label": "Node Label",
+      "description": "Optional detailed description",
+      "row": 0,
+      "column": 0
+    }
+  ]
+}
+\`\`\`
+
+### Edge Format
+\`\`\`json
+{
+  "edges": [
+    {
+      "id": "edge_1",
+      "source": "node_1",
+      "target": "node_2",
+      "label": "Optional edge label"
+    }
+  ]
+}
+\`\`\`
+
+## Layout Rules
+- row and column represent logical positions, starting from 0
+- Flowcharts: top to bottom (row increases), branches use different columns
+- Architecture diagrams: arranged by hierarchy
+- Sequence diagrams: participants on same row, messages increase row
+
+## Important
+1. Output only JSON, no explanatory text
+2. Ensure all ids are unique
+3. Ensure edge source and target reference existing node ids
+4. Use concise English labels
+`,
+};
+
+/**
+ * 获取当前语言的系统提示词
+ */
+export function getSystemPrompt(lang?: Language): string {
+    const language = lang || getCurrentLanguage();
+    return SYSTEM_PROMPTS[language];
+}
+
+// 默认系统提示词（向后兼容）
+export const SYSTEM_PROMPT = SYSTEM_PROMPTS.zh;
 
 // 图表类型特定的提示
 const DIAGRAM_TYPE_PROMPTS: Record<DiagramType, string> = {
