@@ -3,6 +3,7 @@
 import React from "react";
 import { ExportButton, ImportButton } from "@/components/toolbar";
 import { useEngine, CanvasEngine } from "@/contexts";
+import { useTranslation, Language } from "@/lib/i18n";
 
 interface HeaderProps {
   onSettingsClick?: () => void;
@@ -11,9 +12,14 @@ interface HeaderProps {
 
 export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
   const { engine, setEngine } = useEngine();
+  const { language, setLanguage, t } = useTranslation();
 
   const handleEngineChange = (newEngine: CanvasEngine) => {
     setEngine(newEngine);
+  };
+
+  const handleLanguageChange = (lang: Language) => {
+    setLanguage(lang);
   };
 
   return (
@@ -29,20 +35,20 @@ export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
           <button
             onClick={() => handleEngineChange("excalidraw")}
             className={`px-3 py-1 text-xs rounded-md transition-colors ${engine === "excalidraw"
-                ? "bg-blue-600 text-white"
-                : "text-slate-400 hover:text-white"
+              ? "bg-blue-600 text-white"
+              : "text-slate-400 hover:text-white"
               }`}
           >
-            Excalidraw
+            {t("header.engineExcalidraw")}
           </button>
           <button
             onClick={() => handleEngineChange("drawio")}
             className={`px-3 py-1 text-xs rounded-md transition-colors ${engine === "drawio"
-                ? "bg-blue-600 text-white"
-                : "text-slate-400 hover:text-white"
+              ? "bg-blue-600 text-white"
+              : "text-slate-400 hover:text-white"
               }`}
           >
-            Draw.io
+            {t("header.engineDrawio")}
           </button>
         </div>
       </div>
@@ -53,7 +59,7 @@ export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
           <button
             onClick={onAutoLayoutClick}
             className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-sm"
-            title="自动布局"
+            title={t("header.autoLayout")}
           >
             <svg
               className="w-4 h-4"
@@ -68,7 +74,7 @@ export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
                 d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
               />
             </svg>
-            <span className="hidden sm:inline">布局</span>
+            <span className="hidden sm:inline">{t("header.autoLayout")}</span>
           </button>
         )}
 
@@ -77,10 +83,32 @@ export function Header({ onSettingsClick, onAutoLayoutClick }: HeaderProps) {
 
         <div className="w-px h-6 bg-slate-700 mx-2" />
 
+        {/* 语言切换 */}
+        <div className="flex bg-slate-800 rounded-lg p-0.5">
+          <button
+            onClick={() => handleLanguageChange("zh")}
+            className={`px-2 py-1 text-xs rounded-md transition-colors ${language === "zh"
+              ? "bg-blue-600 text-white"
+              : "text-slate-400 hover:text-white"
+              }`}
+          >
+            中
+          </button>
+          <button
+            onClick={() => handleLanguageChange("en")}
+            className={`px-2 py-1 text-xs rounded-md transition-colors ${language === "en"
+              ? "bg-blue-600 text-white"
+              : "text-slate-400 hover:text-white"
+              }`}
+          >
+            EN
+          </button>
+        </div>
+
         <button
           onClick={onSettingsClick}
           className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          title="设置"
+          title={t("common.settings")}
         >
           <svg
             className="w-5 h-5"
