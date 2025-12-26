@@ -190,7 +190,10 @@ export async function convertMermaidToElements(
                     base.angle = 0;
             }
 
-            // 处理容器元素的 Label (嵌套对象) -> 转换为绑定的 Text 元素
+            // 先添加基础元素 (容器/底座)
+            elements.push(base as ExcalidrawElement);
+
+            // 处理容器元素的 Label (嵌套对象) -> 转换为绑定的 Text 元素 (放在容器上方)
             if ((base.type === "rectangle" || base.type === "diamond" || base.type === "ellipse") && el.label && el.label.text) {
                 const textId = `${id}-text`;
                 const labelText = el.label.text;
@@ -232,14 +235,24 @@ export async function convertMermaidToElements(
                     autoResize: true,
                 };
 
-                // 更新容器元素的 boundElements
+                // 更新已添加的容器元素的 boundElements (引用更新)
+                if (!base.boundElements) {
+                    base.boundElements = [];
+                }
                 base.boundElements.push({ id: textId, type: "text" });
 
-                // 将文本元素也加入结果列表
+                // 将文本元素加入结果列表 (在容器之后)
                 elements.push(textElement);
             }
 
-            elements.push(base as ExcalidrawElement);
+            // 处理 arrow/line 的绑定信息调试
+            if (el.type === "arrow" || el.type === "line") {
+                if (!base.startBinding && !base.endBinding) {
+                    // 尝试手动查找最近的节点进行绑定 (简单的距离检测，作为 fallback)
+                    // 注意：这可能比较耗时且不一定准确，暂时仅记录日志
+                    // console.log(`[Mermaid] Unbound edge: ${id}`);
+                }
+            }
         });
 
         console.log("[Mermaid] Processed elements:", elements.length);
