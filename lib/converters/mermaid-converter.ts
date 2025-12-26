@@ -30,89 +30,42 @@ export function extractMermaidCode(content: string): string | null {
  */
 export async function convertMermaidToElements(
     mermaidCode: string
-): Promise<{ elements: ExcalidrawElement[]; success: boolean; error?: string }> {
+): Promise<{ elements: ExcalidrawElement[]; files: Record<string, unknown>; success: boolean; error?: string }> {
     try {
-        const result = await parseMermaidToExcalidraw(mermaidCode);
+        // 使用官方配置
+        const result = await parseMermaidToExcalidraw(mermaidCode, {
+            themeVariables: {
+                fontSize: "16px",
+            },
+        });
 
         if (!result || !result.elements || !Array.isArray(result.elements) || result.elements.length === 0) {
             return {
                 elements: [],
+                files: {},
                 success: false,
                 error: "Mermaid parsing returned no elements",
             };
         }
 
-        // 转换为 Excalidraw 元素格式，确保所有必要属性存在
-        const processedElements = result.elements.map((el, index) => {
-            // 基础属性
-            const baseElement = {
-                id: el.id || `mermaid-${Date.now()}-${index}`,
-                type: el.type || "rectangle",
-                x: el.x || 0,
-                y: el.y || 0,
-                width: el.width || 100,
-                height: el.height || 50,
-                angle: el.angle || 0,
-                strokeColor: el.strokeColor || "#1e1e1e",
-                backgroundColor: el.backgroundColor || "transparent",
-                fillStyle: el.fillStyle || "solid",
-                strokeWidth: el.strokeWidth || 2,
-                strokeStyle: el.strokeStyle || "solid",
-                roughness: el.roughness || 1,
-                opacity: el.opacity || 100,
-                groupIds: el.groupIds || [],
-                frameId: el.frameId || null,
-                roundness: el.roundness || null,
-                seed: el.seed || Math.floor(Math.random() * 2147483647),
-                version: el.version || 1,
-                versionNonce: Math.floor(Math.random() * 1000000000),
-                isDeleted: false,
-                updated: Date.now(),
-                boundElements: el.boundElements || null,
-                link: el.link || null,
-                locked: el.locked || false,
-            };
+        // 直接使用库返回的元素，不做过多处理
+        // 库返回的元素应该已经是完整的 Excalidraw 格式
+        const elements = result.elements as ExcalidrawElement[];
+        const files = result.files || {};
 
-            // 根据类型添加特定属性
-            if (el.type === "text") {
-                return {
-                    ...baseElement,
-                    text: el.text || "",
-                    fontSize: el.fontSize || 16,
-                    fontFamily: el.fontFamily || 1,
-                    textAlign: el.textAlign || "center",
-                    verticalAlign: el.verticalAlign || "middle",
-                    baseline: el.baseline || 0,
-                    containerId: el.containerId || null,
-                    originalText: el.originalText || el.text || "",
-                    autoResize: el.autoResize !== undefined ? el.autoResize : true,
-                    lineHeight: el.lineHeight || 1.25,
-                };
-            }
-
-            if (el.type === "arrow" || el.type === "line") {
-                return {
-                    ...baseElement,
-                    points: el.points || [[0, 0], [100, 0]],
-                    lastCommittedPoint: el.lastCommittedPoint || null,
-                    startBinding: el.startBinding || null,
-                    endBinding: el.endBinding || null,
-                    startArrowhead: el.startArrowhead || null,
-                    endArrowhead: el.type === "arrow" ? (el.endArrowhead || "arrow") : null,
-                };
-            }
-
-            return baseElement;
-        });
+        console.log("[Mermaid] Parsed elements:", elements.length);
+        console.log("[Mermaid] Element types:", elements.map(el => el.type));
 
         return {
-            elements: processedElements as ExcalidrawElement[],
+            elements,
+            files,
             success: true,
         };
     } catch (error) {
         console.error("Mermaid conversion failed:", error);
         return {
             elements: [],
+            files: {},
             success: false,
             error: error instanceof Error ? error.message : "Unknown error",
         };
