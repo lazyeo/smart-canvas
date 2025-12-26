@@ -202,8 +202,8 @@ export async function convertMermaidToElements(
                 const lines = labelText.split('\n');
                 const lineCount = lines.length;
                 const maxLineLength = Math.max(...lines.map((l: string) => l.length));
-                // 粗略估算：每个字符宽 10px (fontSize 16)，高 25px
-                const estimatedWidth = maxLineLength * 10 + 10;
+                // 粗略估算：每个字符宽 12px (留足余量)，高 25px
+                const estimatedWidth = maxLineLength * 12 + 20;
                 const estimatedHeight = lineCount * 25;
 
                 // 创建绑定的文本元素
@@ -240,7 +240,7 @@ export async function convertMermaidToElements(
                     verticalAlign: "middle",
                     containerId: base.id,
                     originalText: labelText,
-                    autoResize: true,
+                    autoResize: false, // 关键：禁用自动调整，防止死循环
                 };
 
                 // 更新已添加的容器元素的 boundElements (引用更新)
