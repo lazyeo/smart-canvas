@@ -62,11 +62,14 @@ export async function convertMermaidToElements(
         }
 
         // 转换为符合 ExcalidrawElement 接口的完整对象
-        const elements = result.elements.map((el: any, index: number) => {
+        const elements: ExcalidrawElement[] = [];
+
+        result.elements.forEach((el: any, index: number) => {
             // 确保 ID 存在
             const id = el.id || `mermaid-${Date.now()}-${index}`;
+            const now = Date.now();
 
-            // 基础属性默认值 (必须与 ExcalidrawElement 接口匹配)
+            // 基础属性默认值
             const base: any = {
                 id,
                 x: typeof el.x === 'number' ? el.x : 0,
@@ -75,7 +78,7 @@ export async function convertMermaidToElements(
                 backgroundColor: el.backgroundColor || "transparent",
                 fillStyle: el.fillStyle || "solid",
                 strokeWidth: typeof el.strokeWidth === 'number' ? el.strokeWidth : 2,
-                strokeStyle: el.strokeStyle || "solid", // solid, dashed, dotted
+                strokeStyle: el.strokeStyle || "solid",
                 roughness: typeof el.roughness === 'number' ? el.roughness : 1,
                 opacity: typeof el.opacity === 'number' ? el.opacity : 100,
                 groupIds: Array.isArray(el.groupIds) ? el.groupIds : [],
@@ -85,13 +88,13 @@ export async function convertMermaidToElements(
                 version: typeof el.version === 'number' ? el.version : 1,
                 versionNonce: Math.floor(Math.random() * 1000000000),
                 isDeleted: false,
-                boundElements: Array.isArray(el.boundElements) ? el.boundElements : null,
-                updated: Date.now(),
+                boundElements: Array.isArray(el.boundElements) ? el.boundElements : [], // 初始化为空数组
+                updated: now,
                 link: el.link || null,
                 locked: el.locked || false,
             };
 
-            // 根据类型补充特定属性
+            // 处理类型和特有属性
             switch (el.type) {
                 case "rectangle":
                 case "diamond":
@@ -107,12 +110,11 @@ export async function convertMermaidToElements(
                     base.text = el.text || "";
                     base.fontSize = typeof el.fontSize === 'number' ? el.fontSize : 16;
                     base.fontFamily = typeof el.fontFamily === 'number' ? el.fontFamily : 1;
-                    base.textAlign = el.textAlign || "center"; // left, center, right
-                    base.verticalAlign = el.verticalAlign || "middle"; // top, middle, bottom
+                    base.textAlign = el.textAlign || "center";
+                    base.verticalAlign = el.verticalAlign || "middle";
                     base.containerId = el.containerId || null;
                     base.originalText = el.originalText || base.text;
                     base.autoResize = true;
-                    // text 元素也需要 width/height/angle，通常库会返回，如果没有则给个默认值
                     base.width = typeof el.width === 'number' ? el.width : 10;
                     base.height = typeof el.height === 'number' ? el.height : 10;
                     base.angle = typeof el.angle === 'number' ? el.angle : 0;
@@ -126,16 +128,61 @@ export async function convertMermaidToElements(
                     base.angle = typeof el.angle === 'number' ? el.angle : 0;
                     base.points = Array.isArray(el.points) && el.points.length > 0
                         ? el.points
-                        : [[0, 0], [100, 100]]; // 默认两点
+                        : [[0, 0], [100, 100]];
                     base.lastCommittedPoint = null;
                     base.startBinding = el.startBinding || null;
                     base.endBinding = el.endBinding || null;
                     base.startArrowhead = el.startArrowhead || null;
                     base.endArrowhead = el.endArrowhead || (el.type === "arrow" ? "arrow" : null);
+
+                    // 处理连线上的标签 (label 属性)
+                    if (el.label && el.label.text) {
+                        const labelId = `${id}-label`;
+                        const labelText = el.label.text;
+                        // 计算连线中心简单估算
+                        const midX = base.x + (base.points[0][0] + base.points[base.points.length - 1][0]) / 2;
+                        const midY = base.y + (base.points[0][1] + base.points[base.points.length - 1][1]) / 2;
+
+                        const textElement: any = {
+                            id: labelId,
+                            type: "text",
+                            x: midX,
+                            y: midY,
+                            width: labelText.length * 8 + 10, // 估算宽度
+                            height: 20,
+                            angle: 0,
+                            strokeColor: "#1e1e1e",
+                            backgroundColor: "transparent",
+                            fillStyle: "solid",
+                            strokeWidth: 1,
+                            strokeStyle: "solid",
+                            roughness: 1,
+                            opacity: 100,
+                            groupIds: [],
+                            frameId: null,
+                            roundness: null,
+                            seed: Math.floor(Math.random() * 2147483647),
+                            version: 1,
+                            versionNonce: Math.floor(Math.random() * 1000000000),
+                            isDeleted: false,
+                            boundElements: null,
+                            updated: now,
+                            link: null,
+                            locked: false,
+                            text: labelText,
+                            fontSize: 16,
+                            fontFamily: 1,
+                            textAlign: "center",
+                            verticalAlign: "middle",
+                            containerId: null, // 连线标签通常不作为容器内容，而是独立元素
+                            originalText: labelText,
+                            autoResize: true,
+                        };
+                        elements.push(textElement);
+                    }
                     break;
 
                 default:
-                    // 对于未知类型，回退到矩形以防止崩溃
                     console.warn(`[Mermaid] Unknown element type: ${el.type}, falling back to rectangle`);
                     base.type = "rectangle";
                     base.width = typeof el.width === 'number' ? el.width : 50;
@@ -143,7 +190,56 @@ export async function convertMermaidToElements(
                     base.angle = 0;
             }
 
-            return base as ExcalidrawElement;
+            // 处理容器元素的 Label (嵌套对象) -> 转换为绑定的 Text 元素
+            if ((base.type === "rectangle" || base.type === "diamond" || base.type === "ellipse") && el.label && el.label.text) {
+                const textId = `${id}-text`;
+                const labelText = el.label.text;
+
+                // 创建绑定的文本元素
+                const textElement: any = {
+                    id: textId,
+                    type: "text",
+                    x: base.x + base.width / 2, // 初始位置，Excalidraw 会自动调整绑定文本
+                    y: base.y + base.height / 2,
+                    width: base.width, // 初始宽度
+                    height: 20, // 初始高度
+                    angle: 0,
+                    strokeColor: el.label.strokeColor || "#1e1e1e", // 文字颜色
+                    backgroundColor: "transparent",
+                    fillStyle: "solid",
+                    strokeWidth: 1,
+                    strokeStyle: "solid",
+                    roughness: 1,
+                    opacity: 100,
+                    groupIds: base.groupIds,
+                    frameId: null,
+                    roundness: null,
+                    seed: Math.floor(Math.random() * 2147483647),
+                    version: 1,
+                    versionNonce: Math.floor(Math.random() * 1000000000),
+                    isDeleted: false,
+                    boundElements: null,
+                    updated: now,
+                    link: null,
+                    locked: false,
+                    text: labelText,
+                    fontSize: el.label.fontSize || 16,
+                    fontFamily: 1,
+                    textAlign: "center",
+                    verticalAlign: "middle",
+                    containerId: base.id, // 关键：绑定到容器
+                    originalText: labelText,
+                    autoResize: true,
+                };
+
+                // 更新容器元素的 boundElements
+                base.boundElements.push({ id: textId, type: "text" });
+
+                // 将文本元素也加入结果列表
+                elements.push(textElement);
+            }
+
+            elements.push(base as ExcalidrawElement);
         });
 
         console.log("[Mermaid] Processed elements:", elements.length);
