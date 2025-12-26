@@ -6,6 +6,7 @@ import { generateDrawioXml, containsMermaidCode, extractMermaidCode, convertMerm
 import {
     chatStream,
     SYSTEM_PROMPT,
+    getMermaidSystemPrompt,
     buildDiagramPrompt,
     parseDiagramJSON,
     generateExcalidrawElements,
@@ -568,7 +569,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         // 流式调用 LLM（包含历史）
         await chatStream(
             [
-                { role: "system", content: SYSTEM_PROMPT },
+                { role: "system", content: getMermaidSystemPrompt() },
                 ...historyMessages.slice(0, -1), // 历史消息（不含当前）
                 { role: "user", content: prompt }, // 当前请求使用完整 prompt
             ],
