@@ -198,16 +198,24 @@ export async function convertMermaidToElements(
                 const textId = `${id}-text`;
                 const labelText = el.label.text;
 
+                // 估算文本尺寸，避免 autoResize 冲突导致的无限递归
+                const lines = labelText.split('\n');
+                const lineCount = lines.length;
+                const maxLineLength = Math.max(...lines.map((l: string) => l.length));
+                // 粗略估算：每个字符宽 10px (fontSize 16)，高 25px
+                const estimatedWidth = maxLineLength * 10 + 10;
+                const estimatedHeight = lineCount * 25;
+
                 // 创建绑定的文本元素
                 const textElement: any = {
                     id: textId,
                     type: "text",
-                    x: base.x + base.width / 2, // 初始位置，Excalidraw 会自动调整绑定文本
-                    y: base.y + base.height / 2,
-                    width: base.width, // 初始宽度
-                    height: 20, // 初始高度
+                    x: base.x + base.width / 2 - estimatedWidth / 2, // 居中
+                    y: base.y + base.height / 2 - estimatedHeight / 2,
+                    width: estimatedWidth,
+                    height: estimatedHeight,
                     angle: 0,
-                    strokeColor: el.label.strokeColor || "#1e1e1e", // 文字颜色
+                    strokeColor: el.label.strokeColor || "#1e1e1e",
                     backgroundColor: "transparent",
                     fillStyle: "solid",
                     strokeWidth: 1,
@@ -230,7 +238,7 @@ export async function convertMermaidToElements(
                     fontFamily: 1,
                     textAlign: "center",
                     verticalAlign: "middle",
-                    containerId: base.id, // 关键：绑定到容器
+                    containerId: base.id,
                     originalText: labelText,
                     autoResize: true,
                 };
