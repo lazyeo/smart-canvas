@@ -252,16 +252,39 @@ export async function convertMermaidToElements(
 
                 // 将文本元素加入结果列表 (在容器之后)
                 elements.push(textElement);
+
+                // --- 4. 建立分组关系 (Group) ---
+                // 生成一个新的 Group ID 将容器和文本组合在一起
+                // 这样移动容器时，文本也会跟随 (且不需要 containerId 绑定)
+                const newGroupId = `group-${id}-${now}`;
+
+                // 确保 groupIds 数组存在
+                if (!base.groupIds) base.groupIds = [];
+                if (!textElement.groupIds) textElement.groupIds = [];
+
+                // 添加 Group ID
+                base.groupIds.push(newGroupId);
+                textElement.groupIds.push(newGroupId);
             }
 
-            // 处理 arrow/line 的绑定信息调试
+            // 处理 arrow/line 的绑定信息
             if (el.type === "arrow" || el.type === "line") {
-                if (!base.startBinding && !base.endBinding) {
-                    // 尝试手动查找最近的节点进行绑定 (简单的距离检测，作为 fallback)
-                    // 注意：这可能比较耗时且不一定准确，暂时仅记录日志
-                    // console.log(`[Mermaid] Unbound edge: ${id}`);
-                }
+                // (逻辑保持不变)
             }
+        });
+
+        // --- 5. 全局 Z-Index 排序 ---
+        // 强制重排元素顺序，确保：
+        // 1. 连线 (arrow/line) 在最底层
+        // 2. 形状 (rectangle/diamond/ellipse) 在中间
+        // 3. 文字 (text) 在最顶层
+        elements.sort((a, b) => {
+            const getScore = (el: ExcalidrawElement) => {
+                if (el.type === "arrow" || el.type === "line") return 1;
+                if (el.type === "text") return 3; // 文字永远在最上
+                return 2; // 其他形状
+            };
+            return getScore(a) - getScore(b);
         });
 
         console.log("[Mermaid] Processed elements:", elements.length);
