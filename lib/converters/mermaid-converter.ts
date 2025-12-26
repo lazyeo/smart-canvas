@@ -238,16 +238,17 @@ export async function convertMermaidToElements(
                     fontFamily: 1,
                     textAlign: "center",
                     verticalAlign: "middle",
-                    containerId: base.id,
+                    containerId: null, // 解除绑定，避免布局死循环
                     originalText: labelText,
-                    autoResize: false, // 关键：禁用自动调整，防止死循环
+                    autoResize: false, // 保持禁用自动调整
                 };
 
-                // 更新已添加的容器元素的 boundElements (引用更新)
-                if (!base.boundElements) {
-                    base.boundElements = [];
-                }
-                base.boundElements.push({ id: textId, type: "text" });
+                // 不再通过 boundElements 绑定，仅通过 groupIds 组合
+                // 这样可以避免 Excalidraw 内部的布局更新死循环
+                // if (!base.boundElements) {
+                //     base.boundElements = [];
+                // }
+                // base.boundElements.push({ id: textId, type: "text" });
 
                 // 将文本元素加入结果列表 (在容器之后)
                 elements.push(textElement);
