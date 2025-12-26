@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useCanvas, useEngine } from "@/contexts";
-import { generateDrawioXml } from "@/lib/converters";
+import { generateDrawioXml, containsMermaidCode, extractMermaidCode, convertMermaidToElements } from "@/lib/converters";
 import {
     chatStream,
     SYSTEM_PROMPT,
@@ -589,8 +589,70 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         )
                     );
                 },
-                onComplete: (fullContent) => {
-                    // 输出标军。
+                onComplete: async (fullContent) => {
+                    // 优先尝试 Mermaid 解析（Token 更省）
+                    if (containsMermaidCode(fullContent)) {
+                        const mermaidCode = extractMermaidCode(fullContent);
+                        if (mermaidCode) {
+                            const mermaidResult = await convertMermaidToElements(mermaidCode);
+                            if (mermaidResult.success && mermaidResult.elements.length > 0) {
+                                const currentElements = getElements();
+                                let adjustedElements = mermaidResult.elements;
+
+                                if (selectionInfo && selectionInfo.bounds) {
+                                    const offsetX = selectionInfo.bounds.x + selectionInfo.bounds.width + 100;
+                                    const offsetY = selectionInfo.bounds.y;
+                                    adjustedElements = mermaidResult.elements.map((el) => ({
+                                        ...el,
+                                        x: (el.x || 0) + offsetX,
+                                        y: (el.y || 0) + offsetY,
+                                    }));
+                                }
+
+                                updateScene({ elements: [...currentElements, ...adjustedElements] });
+
+                                // 统计节点和边数量
+                                const nodeCount = adjustedElements.filter(el =>
+                                    el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond"
+                                ).length;
+                                const edgeCount = adjustedElements.filter(el =>
+                                    el.type === "arrow" || el.type === "line"
+                                ).length;
+
+                                setMessages((prev) =>
+                                    prev.map((msg) =>
+                                        msg.id === aiMsgId
+                                            ? {
+                                                ...msg,
+                                                content: `已生成 ${nodeCount} 个节点和 ${edgeCount} 条连线 (Mermaid)`,
+                                                status: "success",
+                                                isThinkingExpanded: false,
+                                                nodeCount,
+                                                edgeCount,
+                                            }
+                                            : msg
+                                    )
+                                );
+
+                                conversationHistoryRef.current = addMessage(
+                                    conversationHistoryRef.current,
+                                    "assistant",
+                                    `已生成 ${nodeCount} 个节点和 ${edgeCount} 条连线`
+                                );
+
+                                if (onSendMessage) {
+                                    onSendMessage(userMessage);
+                                }
+
+                                setIsLoading(false);
+                                setStreamingContent("");
+                                setTimeout(scrollToBottom, 100);
+                                return;
+                            }
+                        }
+                    }
+
+                    // Fallback: JSON 解析
                     const diagramData = parseDiagramJSON(fullContent);
 
                     if (diagramData) {
