@@ -238,9 +238,9 @@ export async function convertMermaidToElements(
                     fontFamily: 1,
                     textAlign: "center",
                     verticalAlign: "middle",
-                    containerId: null, // 解除绑定，避免布局死循环
+                    containerId: null, // 保持解除绑定
                     originalText: labelText,
-                    autoResize: false, // 保持禁用自动调整
+                    autoResize: true, // 恢复自动调整，确保文字可见 (因已解绑，不会死循环)
                 };
 
                 // 不再通过 boundElements 绑定，仅通过 groupIds 组合
