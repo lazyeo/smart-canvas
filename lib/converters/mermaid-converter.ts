@@ -4,7 +4,6 @@
  */
 
 import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
-import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
 
 /**
@@ -60,14 +59,41 @@ export async function convertMermaidToElements(
 
         console.log("[Mermaid] Skeleton elements count:", result.elements.length);
 
+        // 动态导入以避免 SSR 构建时的 "window is not defined" 错误
+        const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+
         // 使用官方的 convertToExcalidrawElements 函数将骨架元素转换为完整元素
         // 这会自动处理：
         // - label 嵌套对象 → 创建绑定的 text 元素
         // - start/end 属性 → 创建 startBinding/endBinding
         // - 生成完整的元素属性（id, seed, version, boundElements 等）
-        const elements = convertToExcalidrawElements(result.elements, {
+        const rawElements = convertToExcalidrawElements(result.elements, {
             regenerateIds: false, // 保留原始 ID 以维持绑定关系
         }) as ExcalidrawElement[];
+
+        // 后处理：normalize 箭头元素的 points，确保第一个点是 [0, 0]
+        // 这可以避免 "Linear element is not normalized" 错误
+        const elements = rawElements.map(el => {
+            if ((el.type === "arrow" || el.type === "line") && el.points && el.points.length > 0) {
+                const firstPoint = el.points[0];
+                // 如果第一个点不是 [0, 0]，需要 normalize
+                if (firstPoint[0] !== 0 || firstPoint[1] !== 0) {
+                    const offsetX = firstPoint[0];
+                    const offsetY = firstPoint[1];
+                    const normalizedPoints = el.points.map((p: [number, number]) => [
+                        p[0] - offsetX,
+                        p[1] - offsetY,
+                    ] as [number, number]);
+                    return {
+                        ...el,
+                        x: el.x + offsetX,
+                        y: el.y + offsetY,
+                        points: normalizedPoints,
+                    };
+                }
+            }
+            return el;
+        });
 
         console.log("[Mermaid] Converted elements count:", elements.length);
         console.log("[Mermaid] Element types:", elements.map(el => el.type));
