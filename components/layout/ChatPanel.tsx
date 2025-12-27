@@ -278,45 +278,71 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
 
             for (let idx = 0; idx < result.nodesToUpdate.length; idx++) {
                 const update = result.nodesToUpdate[idx];
-                if (update.changes.label) {
-                    // 尝试按索引匹配
-                    const targetText = selectedTexts[idx];
-                    if (targetText) {
-                        const textIndex = newElements.findIndex((el) => el.id === targetText.id);
-                        if (textIndex !== -1) {
-                            newElements[textIndex] = {
-                                ...newElements[textIndex],
+
+                // ID 匹配或顺序匹配逻辑
+                let targetElIndex = -1;
+
+                // 1. 尝试直接 ID 匹配
+                targetElIndex = newElements.findIndex(el => el.id === update.id);
+
+                // 2. 如果 ID 不匹配（AI 返回了简化 ID 如 "A", "B"），尝试按顺序匹配选中的 Shape
+                if (targetElIndex === -1 && idx < selectedShapes.length) {
+                    targetElIndex = newElements.findIndex(el => el.id === selectedShapes[idx].id);
+                }
+
+                if (targetElIndex !== -1) {
+                    const targetEl = newElements[targetElIndex];
+
+                    // 修改 Label：如果是 Text 元素直接改，如果是 Shape 找绑定的 Text
+                    if (update.changes.label) {
+                        if (targetEl.type === "text") {
+                            newElements[targetElIndex] = {
+                                ...targetEl,
                                 text: update.changes.label,
                                 originalText: update.changes.label,
-                                version: (newElements[textIndex].version || 0) + 1,
+                                version: (targetEl.version || 0) + 1,
                             };
-                        }
-                    } else if (idx < selectedShapes.length) {
-                        // 如果没有直接选中文本，尝试找形状关联的文本
-                        const shape = selectedShapes[idx];
-                        const groupId = shape.groupIds?.[0];
-                        if (groupId) {
-                            for (let i = 0; i < newElements.length; i++) {
-                                const el = newElements[i];
-                                if (el.type === "text" && el.groupIds?.includes(groupId)) {
-                                    newElements[i] = {
-                                        ...el,
-                                        text: update.changes.label,
-                                        originalText: update.changes.label,
-                                        version: (el.version || 0) + 1,
-                                    };
-                                    break;
+                        } else {
+                            // 查找绑定的 Text（支持多种绑定方式）
+                            let textIndex = -1;
+
+                            // 方式1：通过 containerId 查找（convertToExcalidrawElements 使用这种方式）
+                            textIndex = newElements.findIndex(
+                                el => el.type === "text" && el.containerId === targetEl.id
+                            );
+
+                            // 方式2：通过 boundElements 查找
+                            if (textIndex === -1 && targetEl.boundElements) {
+                                const boundTextRef = targetEl.boundElements.find((b: { type: string }) => b.type === "text");
+                                if (boundTextRef) {
+                                    textIndex = newElements.findIndex(el => el.id === boundTextRef.id);
                                 }
+                            }
+
+                            // 方式3：通过 groupIds 查找（旧版兼容）
+                            if (textIndex === -1) {
+                                const groupId = targetEl.groupIds?.[0];
+                                if (groupId) {
+                                    textIndex = newElements.findIndex(el => el.type === "text" && el.groupIds?.includes(groupId));
+                                }
+                            }
+
+                            if (textIndex !== -1) {
+                                console.log("[applyEditResult] Updating text at index", textIndex, "to:", update.changes.label);
+                                newElements[textIndex] = {
+                                    ...newElements[textIndex],
+                                    text: update.changes.label,
+                                    originalText: update.changes.label,
+                                    version: (newElements[textIndex].version || 0) + 1,
+                                };
+                            } else {
+                                console.warn("[applyEditResult] Could not find bound text for shape:", targetEl.id);
                             }
                         }
                     }
-                }
 
-                // 支持修改节点形状
-                if (update.changes.type && idx < selectedShapes.length) {
-                    const shape = selectedShapes[idx];
-                    const shapeIndex = newElements.findIndex((el) => el.id === shape.id);
-                    if (shapeIndex !== -1) {
+                    // 修改形状类型
+                    if (update.changes.type) {
                         const typeMap: Record<string, string> = {
                             process: "rectangle",
                             decision: "diamond",
@@ -326,10 +352,10 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         };
                         const newType = typeMap[update.changes.type] || update.changes.type;
                         if (["rectangle", "ellipse", "diamond"].includes(newType)) {
-                            newElements[shapeIndex] = {
-                                ...newElements[shapeIndex],
+                            newElements[targetElIndex] = {
+                                ...targetEl,
                                 type: newType as "rectangle" | "ellipse" | "diamond",
-                                version: (newElements[shapeIndex].version || 0) + 1,
+                                version: (targetEl.version || 0) + 1,
                             };
                         }
                     }
@@ -501,8 +527,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         }
 
         updateScene({ elements: newElements });
-
-        // 同步到 Draw.io - 从当前元素提取图表数据
+        // 关键修复：显式触发同步，确保 Draw.io 数据是最新的
         syncToDrawio(newElements);
     };
 
@@ -517,13 +542,36 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             if (el.isDeleted) continue;
 
             if (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond") {
-                // 尝试找到关联的文本
+                // 尝试找到关联的文本（支持多种绑定方式）
                 let label = "";
-                const groupId = el.groupIds?.[0];
-                if (groupId) {
-                    const textEl = elements.find((e) => e.type === "text" && e.groupIds?.includes(groupId));
-                    if (textEl && textEl.text) {
-                        label = textEl.text;
+
+                // 方式1：通过 containerId 查找（convertToExcalidrawElements 使用这种方式）
+                const boundTextEl = elements.find(
+                    (e) => e.type === "text" && e.containerId === el.id
+                );
+                if (boundTextEl && boundTextEl.text) {
+                    label = boundTextEl.text;
+                }
+
+                // 方式2：通过 boundElements 查找
+                if (!label && el.boundElements) {
+                    const boundTextRef = el.boundElements.find((b: { type: string }) => b.type === "text");
+                    if (boundTextRef) {
+                        const textEl = elements.find((e) => e.id === boundTextRef.id);
+                        if (textEl && textEl.text) {
+                            label = textEl.text;
+                        }
+                    }
+                }
+
+                // 方式3：通过 groupIds 查找（旧版兼容）
+                if (!label) {
+                    const groupId = el.groupIds?.[0];
+                    if (groupId) {
+                        const textEl = elements.find((e) => e.type === "text" && e.groupIds?.includes(groupId));
+                        if (textEl && textEl.text) {
+                            label = textEl.text;
+                        }
                     }
                 }
 
@@ -547,6 +595,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         }
 
         if (nodes.length > 0) {
+            console.log("[syncToDrawio] Syncing nodes:", nodes.map(n => ({ id: n.id, label: n.label })));
             setDrawioXml(generateDrawioXml({ nodes, edges }));
         }
     };
@@ -610,7 +659,11 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                     }));
                                 }
 
-                                updateScene({ elements: [...currentElements, ...adjustedElements] });
+                                const allElements = [...currentElements, ...adjustedElements];
+                                updateScene({ elements: allElements });
+
+                                // 同步到 Draw.io
+                                syncToDrawio(allElements);
 
                                 // 统计节点和边数量
                                 const nodeCount = adjustedElements.filter(el =>
@@ -638,7 +691,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                 conversationHistoryRef.current = addMessage(
                                     conversationHistoryRef.current,
                                     "assistant",
-                                    `已生成 ${nodeCount} 个节点和 ${edgeCount} 条连线`
+                                    fullContent // 保存完整生成的 Mermaid 代码，以便后续基于上下文修改
                                 );
 
                                 if (onSendMessage) {
