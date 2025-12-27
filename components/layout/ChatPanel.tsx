@@ -474,18 +474,70 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                 (el) => el.type === "text" && selectedElementIds.includes(el.id)
             );
 
+            // 创建带标签的形状列表，用于匹配
+            const shapesWithLabels = selectedShapes.map(el => ({
+                el,
+                label: getShapeLabel(el, currentElements)
+            }));
+
+            // 调试日志：显示选中的形状及其标签
+            console.log("[applyEditResult] Selected shapes:", shapesWithLabels.map(s => ({
+                id: s.el.id,
+                label: s.label
+            })));
+            console.log("[applyEditResult] Updates to apply:", result.nodesToUpdate);
+
+            // 跟踪已经匹配的形状，避免重复匹配
+            const matchedShapeIds = new Set<string>();
+
             for (let idx = 0; idx < result.nodesToUpdate.length; idx++) {
                 const update = result.nodesToUpdate[idx];
 
                 // ID 匹配或顺序匹配逻辑
                 let targetElIndex = -1;
+                let targetShape: ExcalidrawElement | undefined;
 
                 // 1. 尝试直接 ID 匹配
                 targetElIndex = newElements.findIndex(el => el.id === update.id);
 
-                // 2. 如果 ID 不匹配（AI 返回了简化 ID 如 "A", "B"），尝试按顺序匹配选中的 Shape
+                // 2. 如果是简化 ID（A, B, C...），按字母顺序映射到未匹配的形状
+                if (targetElIndex === -1 && /^[A-Z]$/.test(update.id)) {
+                    const letterIdx = update.id.charCodeAt(0) - 65; // A=0, B=1...
+                    // 找到第 letterIdx 个未匹配的形状
+                    let count = 0;
+                    for (const s of shapesWithLabels) {
+                        if (!matchedShapeIds.has(s.el.id)) {
+                            if (count === letterIdx) {
+                                targetShape = s.el;
+                                targetElIndex = newElements.findIndex(el => el.id === targetShape!.id);
+                                console.log(`[applyEditResult] Mapped ${update.id} -> shape[${letterIdx}]:`, s.label, targetShape?.id);
+                                break;
+                            }
+                            count++;
+                        }
+                    }
+                }
+
+                // 3. 如果还是没找到，按顺序匹配选中的 Shape
                 if (targetElIndex === -1 && idx < selectedShapes.length) {
-                    targetElIndex = newElements.findIndex(el => el.id === selectedShapes[idx].id);
+                    // 找到第 idx 个未匹配的形状
+                    let count = 0;
+                    for (const s of shapesWithLabels) {
+                        if (!matchedShapeIds.has(s.el.id)) {
+                            if (count === idx) {
+                                targetShape = s.el;
+                                targetElIndex = newElements.findIndex(el => el.id === targetShape!.id);
+                                console.log(`[applyEditResult] Fallback to idx ${idx}:`, s.label, targetShape?.id);
+                                break;
+                            }
+                            count++;
+                        }
+                    }
+                }
+
+                // 标记已匹配
+                if (targetShape) {
+                    matchedShapeIds.add(targetShape.id);
                 }
 
                 if (targetElIndex !== -1) {
@@ -646,22 +698,43 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             ) || [];
 
             for (const edge of result.edgesToAdd) {
-                // 处理 selected-0, selected-1 占位符
+                // 处理各种 ID 占位符映射到实际选中的元素 ID
                 let sourceId = edge.sourceNodeId;
                 let targetId = edge.targetNodeId;
 
-                if (sourceId === "selected-0" && selectedShapes.length > 0) {
-                    sourceId = selectedShapes[0].id;
-                }
-                if (targetId === "selected-1" && selectedShapes.length > 1) {
-                    targetId = selectedShapes[1].id;
-                }
-                if (sourceId === "selected" && selectedShapes.length > 0) {
-                    sourceId = selectedShapes[0].id;
-                }
-                if (targetId === "selected" && selectedShapes.length > 1) {
-                    targetId = selectedShapes[1].id;
-                }
+                // 映射函数：将简化 ID 转换为实际元素 ID
+                const mapToActualId = (id: string | undefined): string | undefined => {
+                    if (!id) return undefined;
+
+                    // selected-0, selected-1 占位符
+                    if (id === "selected-0" && selectedShapes.length > 0) return selectedShapes[0].id;
+                    if (id === "selected-1" && selectedShapes.length > 1) return selectedShapes[1].id;
+                    if (id === "selected" && selectedShapes.length > 0) return selectedShapes[0].id;
+
+                    // A, B, C... 简化 ID（按字母顺序映射到选中元素）
+                    if (/^[A-Z]$/.test(id)) {
+                        const idx = id.charCodeAt(0) - 65; // A=0, B=1, C=2...
+                        if (idx < selectedShapes.length) return selectedShapes[idx].id;
+                    }
+
+                    // node-0, node-1... 数字索引
+                    const nodeMatch = id.match(/^node-(\d+)$/);
+                    if (nodeMatch) {
+                        const idx = parseInt(nodeMatch[1], 10);
+                        if (idx < selectedShapes.length) return selectedShapes[idx].id;
+                    }
+
+                    // 尝试直接作为实际 ID 使用
+                    const existingEl = currentElements.find(el => el.id === id);
+                    if (existingEl) return id;
+
+                    return undefined;
+                };
+
+                sourceId = mapToActualId(sourceId);
+                targetId = mapToActualId(targetId);
+
+                console.log("[applyEditResult] Creating edge from", edge.sourceNodeId, "->", sourceId, "to", edge.targetNodeId, "->", targetId);
 
                 if (sourceId && targetId) {
                     // 创建箭头元素
@@ -717,8 +790,30 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                             endArrowhead: "arrow",
                         };
 
+                        // 更新源和目标元素的 boundElements，使连线能跟随形状移动
+                        const sourceIdx = newElements.findIndex(el => el.id === sourceId);
+                        const targetIdx = newElements.findIndex(el => el.id === targetId);
+
+                        if (sourceIdx !== -1) {
+                            const sourceBoundElements = newElements[sourceIdx].boundElements || [];
+                            newElements[sourceIdx] = {
+                                ...newElements[sourceIdx],
+                                boundElements: [...sourceBoundElements, { id: arrowId, type: "arrow" }],
+                                version: (newElements[sourceIdx].version || 0) + 1,
+                            };
+                        }
+
+                        if (targetIdx !== -1) {
+                            const targetBoundElements = newElements[targetIdx].boundElements || [];
+                            newElements[targetIdx] = {
+                                ...newElements[targetIdx],
+                                boundElements: [...targetBoundElements, { id: arrowId, type: "arrow" }],
+                                version: (newElements[targetIdx].version || 0) + 1,
+                            };
+                        }
+
                         newElements = [...newElements, arrow];
-                        console.log("Created arrow between", sourceId, "and", targetId);
+                        console.log("Created arrow between", sourceId, "and", targetId, "with bindings");
                     }
                 }
             }
@@ -805,16 +900,38 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             }
         }
 
-        // 第二遍：收集所有边（箭头）
+        // 第二遍：收集所有边（箭头）及其标签
         for (const el of elements) {
             if (el.isDeleted) continue;
 
             if (el.type === "arrow" && el.startBinding && el.endBinding) {
+                // 尝试获取箭头上的文本标签
+                let edgeLabel = "";
+
+                // 方式1：通过 containerId 查找
+                const boundTextEl = elements.find(
+                    (e) => e.type === "text" && e.containerId === el.id
+                );
+                if (boundTextEl?.text) {
+                    edgeLabel = boundTextEl.text;
+                }
+
+                // 方式2：通过 boundElements 查找
+                if (!edgeLabel && el.boundElements) {
+                    const boundTextRef = el.boundElements.find((b: { type: string }) => b.type === "text");
+                    if (boundTextRef) {
+                        const textEl = elements.find((e) => e.id === boundTextRef.id);
+                        if (textEl?.text) {
+                            edgeLabel = textEl.text;
+                        }
+                    }
+                }
+
                 edges.push({
                     id: el.id,
                     source: el.startBinding.elementId,
                     target: el.endBinding.elementId,
-                    label: "",
+                    label: edgeLabel,
                 });
             }
         }
