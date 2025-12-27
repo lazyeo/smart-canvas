@@ -120,6 +120,15 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         return editKeywords.some((kw) => message.includes(kw));
     };
 
+    // 检测全局编辑意图（修改整个流程图）
+    const detectGlobalEditIntent = (message: string): boolean => {
+        const globalKeywords = [
+            "全部", "全流程", "整个", "所有", "全改", "都改",
+            "翻译", "转换", "中文", "英文", "改为中文", "改为英文",
+        ];
+        return globalKeywords.some((kw) => message.includes(kw)) && detectEditIntent(message);
+    };
+
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, []);
@@ -175,11 +184,16 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         setStreamingContent("");
 
         // 判断是编辑模式还是生成模式
-        const isEditMode = selectionInfo && selectionInfo.count > 0 && detectEditIntent(userMessage);
+        const hasSelection = selectionInfo && selectionInfo.count > 0;
+        const isEditMode = hasSelection && detectEditIntent(userMessage);
+        const isGlobalEditMode = !hasSelection && detectGlobalEditIntent(userMessage);
 
         if (isEditMode && editServiceRef.current) {
-            // === 编辑模式 ===
+            // === 编辑模式（选中元素）===
             await handleEditMode(userMessage, aiMsgId);
+        } else if (isGlobalEditMode && editServiceRef.current) {
+            // === 全局编辑模式（未选中但要修改整个流程）===
+            await handleGlobalEditMode(userMessage, aiMsgId);
         } else {
             // === 生成模式 ===
             await handleGenerateMode(userMessage, aiMsgId);
@@ -287,6 +301,160 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         setIsLoading(false);
         setStreamingContent("");
         setTimeout(scrollToBottom, 100);
+    };
+
+    // 全局编辑模式处理（修改整个流程图）
+    const handleGlobalEditMode = async (userMessage: string, aiMsgId: string) => {
+        if (!editServiceRef.current) return;
+
+        const allElements = getElements();
+
+        // 获取所有形状元素
+        const allShapes = allElements.filter(
+            (el) => !el.isDeleted && (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond")
+        );
+
+        if (allShapes.length === 0) {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? { ...msg, content: "画布上没有可修改的元素", status: "error" }
+                        : msg
+                )
+            );
+            setIsLoading(false);
+            return;
+        }
+
+        // 计算整体边界
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const el of allShapes) {
+            minX = Math.min(minX, el.x);
+            minY = Math.min(minY, el.y);
+            maxX = Math.max(maxX, el.x + (el.width || 0));
+            maxY = Math.max(maxY, el.y + (el.height || 0));
+        }
+
+        // 构建全局编辑上下文
+        const context: SelectionContext = {
+            elementIds: allShapes.map(el => el.id),
+            nodes: allShapes.map((el, idx) => ({
+                id: el.id,
+                type: el.type === "diamond" ? "decision" : el.type === "ellipse" ? "start" : "process",
+                label: getShapeLabel(el, allElements),
+                elementIds: [el.id],
+                logicalPosition: { row: idx, column: 0 },
+                position: { x: el.x, y: el.y, width: el.width || 150, height: el.height || 60 },
+                properties: {},
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            } as ShadowNode)),
+            relatedEdges: [],
+            modules: [],
+            bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+            description: `全局编辑：共 ${allShapes.length} 个节点: ${allShapes.map(el => getShapeLabel(el, allElements)).join(", ")}`,
+            timestamp: Date.now(),
+        };
+
+        console.log("[GlobalEditMode] Context:", context.description);
+
+        const result = await editServiceRef.current.edit(
+            { instruction: userMessage, context },
+            (tokens) => {
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === aiMsgId
+                            ? { ...msg, content: `正在分析全部节点... (~${tokens} tokens)` }
+                            : msg
+                    )
+                );
+            }
+        );
+
+        if (result.success) {
+            // 应用编辑结果（使用全局形状列表）
+            applyGlobalEditResult(result, allShapes, allElements);
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? { ...msg, content: result.explanation, status: "success" }
+                        : msg
+                )
+            );
+        } else {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? { ...msg, content: result.error || "全局编辑失败", status: "error" }
+                        : msg
+                )
+            );
+        }
+
+        setIsLoading(false);
+        setStreamingContent("");
+        setTimeout(scrollToBottom, 100);
+    };
+
+    // 应用全局编辑结果
+    const applyGlobalEditResult = (
+        result: IncrementalEditResult,
+        allShapes: ExcalidrawElement[],
+        allElements: readonly ExcalidrawElement[]
+    ) => {
+        let newElements = [...allElements];
+
+        // 修改文字
+        if (result.nodesToUpdate.length > 0) {
+            for (let idx = 0; idx < result.nodesToUpdate.length; idx++) {
+                const update = result.nodesToUpdate[idx];
+
+                // 找到目标形状
+                let targetShape: ExcalidrawElement | undefined;
+
+                // 1. 尝试 ID 匹配
+                targetShape = allShapes.find(el => el.id === update.id);
+
+                // 2. 尝试按索引匹配
+                if (!targetShape && idx < allShapes.length) {
+                    targetShape = allShapes[idx];
+                }
+
+                if (targetShape && update.changes.label) {
+                    // 查找绑定的文本元素
+                    let textIndex = newElements.findIndex(
+                        el => el.type === "text" && el.containerId === targetShape!.id
+                    );
+
+                    if (textIndex === -1 && targetShape.boundElements) {
+                        const boundTextRef = targetShape.boundElements.find((b: { type: string }) => b.type === "text");
+                        if (boundTextRef) {
+                            textIndex = newElements.findIndex(el => el.id === boundTextRef.id);
+                        }
+                    }
+
+                    if (textIndex === -1) {
+                        const groupId = targetShape.groupIds?.[0];
+                        if (groupId) {
+                            textIndex = newElements.findIndex(el => el.type === "text" && el.groupIds?.includes(groupId));
+                        }
+                    }
+
+                    if (textIndex !== -1) {
+                        console.log("[GlobalEdit] Updating:", getShapeLabel(targetShape, allElements), "->", update.changes.label);
+                        newElements[textIndex] = {
+                            ...newElements[textIndex],
+                            text: update.changes.label,
+                            originalText: update.changes.label,
+                            version: (newElements[textIndex].version || 0) + 1,
+                        };
+                    }
+                }
+            }
+        }
+
+        updateScene({ elements: newElements });
+        syncToDrawio(newElements);
     };
 
     // 应用编辑结果
