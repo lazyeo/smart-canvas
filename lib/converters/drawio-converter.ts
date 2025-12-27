@@ -9,6 +9,9 @@ interface DiagramNode {
     label: string;
     row: number;
     column: number;
+    // 可选：直接使用 Excalidraw 中的坐标
+    x?: number;
+    y?: number;
 }
 
 interface DiagramEdge {
@@ -64,8 +67,9 @@ export function generateDrawioXml(data: DiagramData): string {
         const id = cellId++;
         nodeIdMap.set(node.id, id);
 
-        const x = LAYOUT.startX + node.column * LAYOUT.horizontalSpacing;
-        const y = LAYOUT.startY + node.row * LAYOUT.verticalSpacing;
+        // 优先使用实际坐标，否则根据 row/column 计算
+        const x = node.x !== undefined ? node.x : LAYOUT.startX + node.column * LAYOUT.horizontalSpacing;
+        const y = node.y !== undefined ? node.y : LAYOUT.startY + node.row * LAYOUT.verticalSpacing;
         const shape = SHAPE_MAPPING[node.type] || SHAPE_MAPPING.default;
 
         // 根据类型设置样式

@@ -186,30 +186,60 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         }
     };
 
+    // 辅助函数：获取形状元素绑定的文本标签
+    const getShapeLabel = (shapeEl: ExcalidrawElement, allElements: readonly ExcalidrawElement[]): string => {
+        // 方式1：通过 containerId 查找
+        const boundText = allElements.find(
+            (e) => e.type === "text" && e.containerId === shapeEl.id
+        );
+        if (boundText?.text) return boundText.text;
+
+        // 方式2：通过 boundElements 查找
+        if (shapeEl.boundElements) {
+            const boundTextRef = shapeEl.boundElements.find((b: { type: string }) => b.type === "text");
+            if (boundTextRef) {
+                const textEl = allElements.find((e) => e.id === boundTextRef.id);
+                if (textEl?.text) return textEl.text;
+            }
+        }
+
+        // 方式3：通过 groupIds 查找
+        const groupId = shapeEl.groupIds?.[0];
+        if (groupId) {
+            const textEl = allElements.find((e) => e.type === "text" && e.groupIds?.includes(groupId));
+            if (textEl?.text) return textEl.text;
+        }
+
+        return "节点";
+    };
+
     // 编辑模式处理
     const handleEditMode = async (userMessage: string, aiMsgId: string) => {
         if (!selectionInfo || !editServiceRef.current) return;
 
-        // 构建选中上下文
+        const allElements = getElements();
+
+        // 构建选中上下文 - 为每个选中的形状获取其实际标签
+        const selectedShapes = selectionInfo.selectedElements
+            .filter((el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond");
+
         const context: SelectionContext = {
             elementIds: selectedElementIds,
-            nodes: selectionInfo.selectedElements
-                .filter((el) => el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond")
-                .map((el) => ({
-                    id: el.id,
-                    type: "process",
-                    label: selectionInfo.labels[0] || "节点",
-                    elementIds: [el.id],
-                    logicalPosition: { row: 0, column: 0 },
-                    position: { x: el.x, y: el.y, width: el.width || 150, height: el.height || 60 },
-                    properties: {},
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                } as ShadowNode)),
+            nodes: selectedShapes.map((el, idx) => ({
+                id: el.id,
+                type: el.type === "diamond" ? "decision" : el.type === "ellipse" ? "start" : "process",
+                label: getShapeLabel(el, allElements),  // 获取每个形状的实际标签
+                elementIds: [el.id],
+                logicalPosition: { row: idx, column: 0 },
+                position: { x: el.x, y: el.y, width: el.width || 150, height: el.height || 60 },
+                properties: {},
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            } as ShadowNode)),
             relatedEdges: [],
             modules: [],
             bounds: selectionInfo.bounds,
-            description: `选中了 ${selectionInfo.count} 个元素: ${selectionInfo.labels.join(", ")}`,
+            description: `选中了 ${selectedShapes.length} 个节点: ${selectedShapes.map(el => getShapeLabel(el, allElements)).join(", ")}`,
             timestamp: Date.now(),
         };
 
@@ -534,10 +564,12 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     // 同步 Excalidraw 元素到 Draw.io
     const syncToDrawio = (elements: typeof currentElements) => {
         // 从 Excalidraw 元素提取节点和边
-        const nodes: Array<{ id: string; type: string; label: string; row: number; column: number }> = [];
+        const nodes: Array<{ id: string; type: string; label: string; row: number; column: number; x: number; y: number }> = [];
         const edges: Array<{ id: string; source: string; target: string; label?: string }> = [];
 
-        let rowIndex = 0;
+        // 第一遍：收集所有形状元素及其位置
+        const shapeElements: Array<{ el: typeof elements[0]; label: string }> = [];
+
         for (const el of elements) {
             if (el.isDeleted) continue;
 
@@ -575,14 +607,39 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                     }
                 }
 
+                shapeElements.push({ el, label: label || "节点" });
+            }
+        }
+
+        // 根据 Excalidraw 中的实际位置计算 row/column
+        // 使用网格化布局：将连续的 x/y 坐标映射到离散的 row/column
+        if (shapeElements.length > 0) {
+            // 收集所有唯一的 y 坐标（用于计算 row）和 x 坐标（用于计算 column）
+            const yCoords = [...new Set(shapeElements.map(s => Math.round(s.el.y / 80) * 80))].sort((a, b) => a - b);
+            const xCoords = [...new Set(shapeElements.map(s => Math.round(s.el.x / 160) * 160))].sort((a, b) => a - b);
+
+            for (const { el, label } of shapeElements) {
+                // 根据元素位置计算 row 和 column
+                const normalizedY = Math.round(el.y / 80) * 80;
+                const normalizedX = Math.round(el.x / 160) * 160;
+                const row = yCoords.indexOf(normalizedY);
+                const column = xCoords.indexOf(normalizedX);
+
                 nodes.push({
                     id: el.id,
                     type: el.type === "diamond" ? "decision" : el.type === "ellipse" ? "start" : "process",
-                    label: label || "节点",
-                    row: rowIndex++,
-                    column: 0,
+                    label,
+                    row: row >= 0 ? row : 0,
+                    column: column >= 0 ? column : 0,
+                    x: el.x,
+                    y: el.y,
                 });
             }
+        }
+
+        // 第二遍：收集所有边（箭头）
+        for (const el of elements) {
+            if (el.isDeleted) continue;
 
             if (el.type === "arrow" && el.startBinding && el.endBinding) {
                 edges.push({
@@ -595,7 +652,8 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         }
 
         if (nodes.length > 0) {
-            console.log("[syncToDrawio] Syncing nodes:", nodes.map(n => ({ id: n.id, label: n.label })));
+            console.log("[syncToDrawio] Syncing nodes:", nodes.map(n => ({ id: n.id, label: n.label, row: n.row, column: n.column })));
+            console.log("[syncToDrawio] Syncing edges:", edges.length);
             setDrawioXml(generateDrawioXml({ nodes, edges }));
         }
     };
