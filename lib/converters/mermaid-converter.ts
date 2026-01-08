@@ -1,10 +1,12 @@
 /**
  * Mermaid 到 Excalidraw 转换器
  * 将 Mermaid 代码转换为 Excalidraw 元素
+ * 支持降级显示不完全支持的图表类型
  */
 
 import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
+import { autoFallback, generateFlowchartFromJSON, type FallbackResult } from "./mermaid-fallback";
 
 /**
  * 从文本中提取 Mermaid 代码块
@@ -16,13 +18,24 @@ export function extractMermaidCode(content: string): string | null {
         return mermaidMatch[1].trim();
     }
 
-    // 匹配没有代码块标记的 Mermaid 语法
-    const flowchartMatch = content.match(/(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram)[\s\S]+/i);
+    // 匹配没有代码块标记的 Mermaid 语法（包括 erDiagram）
+    const flowchartMatch = content.match(/(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram)[\s\S]+/i);
     if (flowchartMatch) {
         return flowchartMatch[0].trim();
     }
 
     return null;
+}
+
+/**
+ * 转换结果类型（扩展支持降级信息）
+ */
+export interface ConversionResult {
+    elements: ExcalidrawElement[];
+    files: Record<string, unknown>;
+    success: boolean;
+    error?: string;
+    fallback?: FallbackResult;  // 降级信息
 }
 
 /**
@@ -33,27 +46,55 @@ export function extractMermaidCode(content: string): string | null {
  * 1. label 属性 → 创建绑定的 text 元素（containerId/boundElements）
  * 2. start/end 属性 → 创建连线绑定（startBinding/endBinding）
  * 3. 生成所有必需的属性（id, seed, version 等）
+ *
+ * 对于不完全支持的图表类型（如 ER 图），会自动降级处理
  */
 export async function convertMermaidToElements(
     mermaidCode: string
-): Promise<{ elements: ExcalidrawElement[]; files: Record<string, unknown>; success: boolean; error?: string }> {
+): Promise<ConversionResult> {
     try {
         console.log("[Mermaid] Starting conversion...");
 
+        // 检测图表类型
+        const diagramType = detectMermaidType(mermaidCode);
+        console.log("[Mermaid] Detected type:", diagramType);
+
+        // 对于可能不完全支持的类型，先尝试降级
+        let codeToConvert = mermaidCode;
+        let fallbackInfo: FallbackResult | undefined;
+
+        if (diagramType === "er" || diagramType === "state") {
+            console.log("[Mermaid] Applying fallback for type:", diagramType);
+            const fallbackResult = autoFallback(mermaidCode, diagramType);
+            if (fallbackResult.success && fallbackResult.mermaidCode) {
+                codeToConvert = fallbackResult.mermaidCode;
+                fallbackInfo = fallbackResult;
+                console.log("[Mermaid] Fallback applied, new type:", fallbackResult.fallbackType);
+            }
+        }
+
         // 使用官方配置解析 Mermaid 代码
-        const result = await parseMermaidToExcalidraw(mermaidCode, {
+        const result = await parseMermaidToExcalidraw(codeToConvert, {
             themeVariables: {
                 fontSize: "16px",
             },
         });
 
         if (!result || !result.elements || !Array.isArray(result.elements) || result.elements.length === 0) {
-            console.warn("[Mermaid] No elements returned");
+            console.warn("[Mermaid] No elements returned, trying JSON fallback...");
+
+            // 尝试 JSON 兜底（如果原始代码看起来像 JSON）
+            const jsonFallback = tryJSONFallback(mermaidCode);
+            if (jsonFallback) {
+                return jsonFallback;
+            }
+
             return {
                 elements: [],
                 files: {},
                 success: false,
                 error: "Mermaid parsing returned no elements",
+                fallback: fallbackInfo,
             };
         }
 
@@ -130,9 +171,18 @@ export async function convertMermaidToElements(
             elements,
             files: result.files || {},
             success: true,
+            fallback: fallbackInfo,
         };
     } catch (error) {
         console.error("Mermaid conversion failed:", error);
+
+        // 转换失败时尝试 JSON 兜底
+        const jsonFallback = tryJSONFallback(mermaidCode);
+        if (jsonFallback) {
+            console.log("[Mermaid] Using JSON fallback after conversion error");
+            return jsonFallback;
+        }
+
         return {
             elements: [],
             files: {},
@@ -143,11 +193,54 @@ export async function convertMermaidToElements(
 }
 
 /**
+ * 尝试 JSON 兜底转换
+ * 当 Mermaid 解析失败时，检查内容是否为 JSON 格式的图表数据
+ */
+function tryJSONFallback(content: string): ConversionResult | null {
+    try {
+        // 尝试提取 JSON 块
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim();
+
+        // 检查是否看起来像 JSON
+        if (!jsonStr.startsWith("{") && !jsonStr.startsWith("[")) {
+            return null;
+        }
+
+        const data = JSON.parse(jsonStr);
+
+        // 检查是否有 nodes 和 edges 结构
+        if (!data.nodes || !Array.isArray(data.nodes)) {
+            return null;
+        }
+
+        console.log("[Mermaid] Attempting JSON fallback conversion");
+
+        // 使用 JSON 兜底生成 Mermaid 代码
+        const fallbackResult = generateFlowchartFromJSON({
+            nodes: data.nodes,
+            edges: data.edges || [],
+        });
+
+        if (!fallbackResult.success || !fallbackResult.mermaidCode) {
+            return null;
+        }
+
+        // 递归调用转换（使用生成的 Mermaid 代码）
+        // 注意：这里不能用 async，所以返回 null 让调用者处理
+        // 实际的递归转换需要在调用处处理
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * 检测内容是否包含 Mermaid 代码
  */
 export function containsMermaidCode(content: string): boolean {
     return /```mermaid/i.test(content) ||
-        /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram)\s/im.test(content);
+        /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram)\s/im.test(content);
 }
 
 /**

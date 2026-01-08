@@ -3,6 +3,7 @@ export {
     SYSTEM_PROMPT,
     getMermaidSystemPrompt,
     buildDiagramPrompt,
+    buildMermaidPrompt,
     buildModifyPrompt,
     parseDiagramJSON,
     type DiagramType,
@@ -52,3 +53,28 @@ export {
     expandShortId,
     type CompressedContext,
 } from "./context-compression";
+
+// 专业版增强服务
+export {
+    enhance,
+    quickEnhance,
+    fullEnhance,
+    analyzeDiagram,
+    type EnhanceRequest,
+    type EnhanceResult,
+    type AnalyzeRequest,
+} from "./enhancement-service";
+
+// 增强提示词和类型
+export {
+    ANALYSIS_SYSTEM_PROMPT,
+    buildAnalysisPrompt,
+    parseAnalysisResult,
+    suggestEnhancementOptions,
+    COLOR_SCHEMES,
+    type SwimlaneInfo,
+    type ParallelBranchInfo,
+    type NodeEnhancement,
+    type EdgeEnhancement,
+    type AnalysisResult,
+} from "./enhancement-prompts";

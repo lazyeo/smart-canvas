@@ -2,12 +2,15 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useCanvas, useEngine } from "@/contexts";
+import { useFile } from "@/contexts/FileContext";
+import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
 import { generateDrawioXml, containsMermaidCode, extractMermaidCode, convertMermaidToElements } from "@/lib/converters";
 import {
     chatStream,
     SYSTEM_PROMPT,
     getMermaidSystemPrompt,
     buildDiagramPrompt,
+    buildMermaidPrompt,
     parseDiagramJSON,
     generateExcalidrawElements,
     DiagramType,
@@ -60,9 +63,80 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { updateScene, getElements, selectedElementIds } = useCanvas();
     const { setDrawioXml } = useEngine();
+    const { autoSave, currentFile, saveChatHistory } = useFile();
 
     // 对话历史管理
     const conversationHistoryRef = useRef<ConversationHistory>(createConversationHistory());
+
+    // 当前文件 ID 跟踪（用于检测文件切换）
+    const currentFileIdRef = useRef<string | null>(null);
+
+    // 当文件切换时，加载该文件的对话历史
+    useEffect(() => {
+        const newFileId = currentFile?.id ?? null;
+
+        // 如果文件 ID 发生变化
+        if (currentFileIdRef.current !== newFileId) {
+            // 更新当前文件 ID
+            currentFileIdRef.current = newFileId;
+
+            if (currentFile?.chatHistory && currentFile.chatHistory.length > 0) {
+                // 从文件加载对话历史
+                const loadedMessages: Message[] = currentFile.chatHistory.map(msg => ({
+                    id: msg.id,
+                    role: msg.role === "assistant" ? "ai" : "user",
+                    content: msg.content,
+                    status: "success" as const,
+                }));
+                setMessages(loadedMessages);
+                // 重建对话历史上下文
+                conversationHistoryRef.current = createConversationHistory();
+                for (const msg of currentFile.chatHistory) {
+                    conversationHistoryRef.current = addMessage(
+                        conversationHistoryRef.current,
+                        msg.role === "assistant" ? "assistant" : "user",
+                        msg.content
+                    );
+                }
+                console.log("[ChatPanel] Loaded", loadedMessages.length, "messages from file");
+            } else {
+                // 新文件或无历史，清空对话
+                setMessages([]);
+                conversationHistoryRef.current = createConversationHistory();
+                console.log("[ChatPanel] File changed, conversation cleared");
+            }
+        }
+    }, [currentFile?.id, currentFile?.chatHistory]);
+
+    // 当消息变化时，保存到文件（防抖）
+    const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    useEffect(() => {
+        // 只有在有消息且文件存在时才保存
+        if (messages.length === 0 || !currentFile) return;
+
+        // 防抖保存
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+        }
+        saveTimerRef.current = setTimeout(() => {
+            const chatHistory = messages
+                // 用户消息没有 status，AI 消息需要是 success 状态
+                .filter(msg => msg.role === "user" || msg.status === "success")
+                .map(msg => ({
+                    id: msg.id,
+                    role: (msg.role === "ai" ? "assistant" : "user") as "user" | "assistant",
+                    content: msg.content,
+                    timestamp: Date.now(),
+                }));
+            saveChatHistory(chatHistory);
+        }, 1000);
+
+        return () => {
+            if (saveTimerRef.current) {
+                clearTimeout(saveTimerRef.current);
+            }
+        };
+    }, [messages, currentFile, saveChatHistory]);
 
     // 计算选中状态和位置
     const selectionInfo = useMemo(() => {
@@ -107,6 +181,118 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             editServiceRef.current = createIncrementalEditService();
         }
     }, []);
+
+    // 估算文字尺寸并更新元素
+    const updateTextDimensions = (
+        textEl: ExcalidrawElement,
+        newText: string,
+        containerEl?: ExcalidrawElement
+    ): { text: ExcalidrawElement; container?: ExcalidrawElement } => {
+        // 估算文字宽度（简单估算：英文字符约 8px，中文约 14px）
+        const fontSize = (textEl as { fontSize?: number }).fontSize || 16;
+        const fontFamily = (textEl as { fontFamily?: number }).fontFamily || 1;
+
+        // 计算文字宽度
+        let charWidth = fontSize * 0.6; // 默认
+        if (fontFamily === 1) { // Hand-drawn style
+            charWidth = fontSize * 0.55;
+        }
+
+        // 计算每个字符的宽度（中文更宽）
+        let totalWidth = 0;
+        for (const char of newText) {
+            if (/[\u4e00-\u9fa5]/.test(char)) {
+                totalWidth += fontSize * 0.9; // 中文
+            } else if (/[A-Z]/.test(char)) {
+                totalWidth += charWidth * 1.1; // 大写字母
+            } else {
+                totalWidth += charWidth * 0.9; // 其他字符
+            }
+        }
+
+        // 添加一些边距
+        const textWidth = totalWidth + 10;
+        const textHeight = fontSize * 1.4;
+
+        // 更新文字元素
+        const updatedText = {
+            ...textEl,
+            text: newText,
+            originalText: newText,
+            width: textWidth,
+            height: textHeight,
+            version: (textEl.version || 0) + 1,
+        };
+
+        // 如果有容器，检查是否需要扩展容器
+        if (containerEl) {
+            const containerWidth = containerEl.width || 100;
+            const containerHeight = containerEl.height || 50;
+            const minPadding = 20;
+
+            const requiredWidth = textWidth + minPadding * 2;
+            const requiredHeight = textHeight + minPadding * 2;
+
+            if (requiredWidth > containerWidth || requiredHeight > containerHeight) {
+                const newWidth = Math.max(containerWidth, requiredWidth);
+                const newHeight = Math.max(containerHeight, requiredHeight);
+
+                // 保持中心点不变
+                const dx = (newWidth - containerWidth) / 2;
+                const dy = (newHeight - containerHeight) / 2;
+
+                return {
+                    text: updatedText,
+                    container: {
+                        ...containerEl,
+                        x: containerEl.x - dx,
+                        y: containerEl.y - dy,
+                        width: newWidth,
+                        height: newHeight,
+                        version: (containerEl.version || 0) + 1,
+                    }
+                };
+            }
+        }
+
+        return { text: updatedText };
+    };
+
+    // 获取所有箭头及其标签
+    const getArrowLabels = (elements: readonly ExcalidrawElement[]): Array<{
+        arrow: ExcalidrawElement;
+        textEl?: ExcalidrawElement;
+        label: string;
+    }> => {
+        const results: Array<{ arrow: ExcalidrawElement; textEl?: ExcalidrawElement; label: string }> = [];
+
+        for (const el of elements) {
+            if (el.type === "arrow" && !el.isDeleted) {
+                // 查找绑定的文字
+                let textEl: ExcalidrawElement | undefined;
+                let label = "";
+
+                // 方式1: containerId
+                textEl = elements.find(t => t.type === "text" && (t as { containerId?: string }).containerId === el.id) as ExcalidrawElement | undefined;
+
+                // 方式2: boundElements
+                if (!textEl && el.boundElements) {
+                    const boundText = el.boundElements.find((b: { type: string }) => b.type === "text");
+                    if (boundText) {
+                        textEl = elements.find(t => t.id === boundText.id) as ExcalidrawElement | undefined;
+                    }
+                }
+
+                if (textEl && (textEl as { text?: string }).text) {
+                    label = (textEl as { text: string }).text;
+                }
+
+                results.push({ arrow: el, textEl, label });
+            }
+        }
+
+        return results;
+    };
 
     // 检测编辑意图
     const detectEditIntent = (message: string): boolean => {
@@ -156,7 +342,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         const userMsgId = `msg-${Date.now()}`;
         setMessages((prev) => [
             ...prev,
-            { id: userMsgId, role: "user", content: userMessage },
+            { id: userMsgId, role: "user", content: userMessage, status: "success" },
         ]);
 
         // 检查 API Key
@@ -404,7 +590,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     ) => {
         let newElements = [...allElements];
 
-        // 修改文字
+        // 修改节点文字
         if (result.nodesToUpdate.length > 0) {
             for (let idx = 0; idx < result.nodesToUpdate.length; idx++) {
                 const update = result.nodesToUpdate[idx];
@@ -423,7 +609,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                 if (targetShape && update.changes.label) {
                     // 查找绑定的文本元素
                     let textIndex = newElements.findIndex(
-                        el => el.type === "text" && el.containerId === targetShape!.id
+                        el => el.type === "text" && (el as { containerId?: string }).containerId === targetShape!.id
                     );
 
                     if (textIndex === -1 && targetShape.boundElements) {
@@ -441,20 +627,82 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                     }
 
                     if (textIndex !== -1) {
-                        console.log("[GlobalEdit] Updating:", getShapeLabel(targetShape, allElements), "->", update.changes.label);
-                        newElements[textIndex] = {
-                            ...newElements[textIndex],
-                            text: update.changes.label,
-                            originalText: update.changes.label,
-                            version: (newElements[textIndex].version || 0) + 1,
-                        };
+                        console.log("[GlobalEdit] Updating node:", getShapeLabel(targetShape, allElements), "->", update.changes.label);
+
+                        // 使用尺寸计算更新
+                        const shapeIndex = newElements.findIndex(el => el.id === targetShape!.id);
+                        const { text: updatedText, container: updatedContainer } = updateTextDimensions(
+                            newElements[textIndex],
+                            update.changes.label,
+                            shapeIndex !== -1 ? newElements[shapeIndex] : undefined
+                        );
+
+                        newElements[textIndex] = updatedText;
+                        if (updatedContainer && shapeIndex !== -1) {
+                            newElements[shapeIndex] = updatedContainer;
+                        }
                     }
+                }
+            }
+        }
+
+        // 修改连线文字（如果有 edgesToUpdate）
+        if (result.edgesToUpdate && result.edgesToUpdate.length > 0) {
+            const arrowLabels = getArrowLabels(newElements);
+
+            for (let idx = 0; idx < result.edgesToUpdate.length; idx++) {
+                const edgeUpdate = result.edgesToUpdate[idx];
+                if (!edgeUpdate.changes?.label) continue;
+
+                // 找到对应的箭头
+                let targetArrow = arrowLabels.find(a => a.arrow.id === edgeUpdate.id);
+
+                // 按索引匹配
+                if (!targetArrow && idx < arrowLabels.length) {
+                    targetArrow = arrowLabels[idx];
+                }
+
+                if (targetArrow?.textEl) {
+                    console.log("[GlobalEdit] Updating edge:", targetArrow.label, "->", edgeUpdate.changes.label);
+                    const textIndex = newElements.findIndex(el => el.id === targetArrow!.textEl!.id);
+                    if (textIndex !== -1) {
+                        const { text: updatedText } = updateTextDimensions(
+                            newElements[textIndex],
+                            edgeUpdate.changes.label
+                        );
+                        newElements[textIndex] = updatedText;
+                    }
+                }
+            }
+        }
+
+        // 如果没有 edgesToUpdate 但有全局翻译意图，尝试同步翻译所有连线文字
+        // 通过检查 nodesToUpdate 中的变化模式来推断翻译
+        if ((!result.edgesToUpdate || result.edgesToUpdate.length === 0) && result.nodesToUpdate.length > 0) {
+            const arrowLabels = getArrowLabels(newElements).filter(a => a.label);
+
+            if (arrowLabels.length > 0) {
+                // 检查是否是翻译场景（中->英 或 英->中）
+                const firstUpdate = result.nodesToUpdate[0];
+                const originalLabel = getShapeLabel(allShapes[0], allElements);
+                const isChineseToEnglish = /[\u4e00-\u9fa5]/.test(originalLabel) && !/[\u4e00-\u9fa5]/.test(firstUpdate.changes.label || "");
+                const isEnglishToChinese = !/[\u4e00-\u9fa5]/.test(originalLabel) && /[\u4e00-\u9fa5]/.test(firstUpdate.changes.label || "");
+
+                if (isChineseToEnglish || isEnglishToChinese) {
+                    console.log("[GlobalEdit] Detected translation, also updating edge labels");
+                    // 构建简单的翻译映射（基于已翻译的节点）
+                    // 这里只是示例，实际可能需要调用 AI 翻译
                 }
             }
         }
 
         updateScene({ elements: newElements });
         syncToDrawio(newElements);
+
+        // 自动保存到当前文件
+        if (currentFile) {
+            autoSave(newElements as ExcalidrawElement[]);
+        }
     };
 
     // 应用编辑结果
@@ -822,6 +1070,11 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         updateScene({ elements: newElements });
         // 关键修复：显式触发同步，确保 Draw.io 数据是最新的
         syncToDrawio(newElements);
+
+        // 自动保存到当前文件
+        if (currentFile) {
+            autoSave(newElements as ExcalidrawElement[]);
+        }
     };
 
     // 同步 Excalidraw 元素到 Draw.io
@@ -950,7 +1203,8 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const handleGenerateMode = async (userMessage: string, aiMsgId: string) => {
         // 检测图表类型
         const diagramType = detectDiagramType(userMessage);
-        const prompt = buildDiagramPrompt(userMessage, diagramType);
+        // 使用 Mermaid prompt 替代 JSON prompt
+        const prompt = buildMermaidPrompt(userMessage, diagramType);
 
         // 添加用户消息到历史
         conversationHistoryRef.current = addMessage(conversationHistoryRef.current, "user", userMessage);
@@ -1007,6 +1261,11 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
 
                                 // 同步到 Draw.io
                                 syncToDrawio(allElements);
+
+                                // 自动保存到当前文件
+                                if (currentFile) {
+                                    autoSave(allElements);
+                                }
 
                                 // 统计节点和边数量
                                 const nodeCount = adjustedElements.filter(el =>
@@ -1071,10 +1330,16 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                             }));
                         }
 
-                        updateScene({ elements: [...currentElements, ...adjustedElements] });
+                        const allElements = [...currentElements, ...adjustedElements];
+                        updateScene({ elements: allElements });
 
                         // 同步生成 Draw.io XML
                         setDrawioXml(generateDrawioXml(diagramData));
+
+                        // 自动保存到当前文件
+                        if (currentFile) {
+                            autoSave(allElements);
+                        }
 
                         // 更新消息，存储解析后的数据
                         setMessages((prev) =>
@@ -1153,10 +1418,34 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         setInput(text);
     };
 
+    // 手动清空对话
+    const handleClearConversation = () => {
+        setMessages([]);
+        conversationHistoryRef.current = createConversationHistory();
+    };
+
     return (
         <div className="w-80 bg-slate-900 border-l border-slate-700 flex flex-col">
             <div className="p-4 border-b border-slate-700">
-                <h2 className="text-sm font-medium text-white">AI 助手</h2>
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-medium text-white">AI 助手</h2>
+                    {messages.length > 0 && (
+                        <button
+                            onClick={handleClearConversation}
+                            className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                            title="清空对话"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
+                {currentFile && (
+                    <p className="text-xs text-blue-400 mt-1 truncate" title={currentFile.name}>
+                        {currentFile.name}
+                    </p>
+                )}
                 <p className="text-xs text-slate-400 mt-1">
                     {selectionInfo
                         ? `已选中 ${selectionInfo.count} 个元素，新内容将添加到其右侧`

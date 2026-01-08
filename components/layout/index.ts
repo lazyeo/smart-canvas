@@ -5,3 +5,7 @@ export { ChatPanel } from "./ChatPanel";
 export { EditModePanel } from "./EditModePanel";
 export { MainLayout } from "./MainLayout";
 export { ModulePanel } from "./ModulePanel";
+export { FileCard } from "./FileCard";
+export { FileList } from "./FileList";
+export { VersionPanel } from "./VersionPanel";
+export { EnhancementPanel } from "./EnhancementPanel";

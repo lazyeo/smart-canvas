@@ -133,6 +133,8 @@ const MERMAID_SYSTEM_PROMPTS: Record<Language, string> = {
 - flowchart LR（流程图，从左到右）
 - sequenceDiagram（时序图）
 - classDiagram（类图）
+- stateDiagram-v2（状态图）
+- erDiagram（ER 图，会自动转换为类图形式显示）
 
 ## 节点形状
 - [文字] 矩形
@@ -140,7 +142,7 @@ const MERMAID_SYSTEM_PROMPTS: Record<Language, string> = {
 - {文字} 菱形
 - ((文字)) 圆形
 
-## 示例
+## 流程图示例
 \`\`\`mermaid
 flowchart TD
     A[开始] --> B{判断条件}
@@ -150,11 +152,41 @@ flowchart TD
     D --> E
 \`\`\`
 
+## 状态图示例
+\`\`\`mermaid
+stateDiagram-v2
+    [*] --> 待处理
+    待处理 --> 处理中: 开始处理
+    处理中 --> 已完成: 处理成功
+    处理中 --> 已失败: 处理失败
+    已完成 --> [*]
+    已失败 --> 待处理: 重试
+\`\`\`
+
+## ER 图示例
+\`\`\`mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    ORDER ||--|{ ORDER_ITEM : contains
+    PRODUCT ||--o{ ORDER_ITEM : includes
+    USER {
+        int id PK
+        string name
+        string email
+    }
+    ORDER {
+        int id PK
+        int user_id FK
+        date created_at
+    }
+\`\`\`
+
 ## 规则
 1. 只输出 Mermaid 代码块
 2. 使用中文标签
 3. 流程图默认用 TD（从上到下）
-4. 不要添加任何解释`,
+4. ER 图会自动转换为类图形式显示
+5. 不要添加任何解释`,
 
   en: `You are a professional diagram generation assistant. Output diagrams using Mermaid syntax.
 
@@ -163,6 +195,8 @@ flowchart TD
 - flowchart LR (flowchart, left to right)
 - sequenceDiagram (sequence diagram)
 - classDiagram (class diagram)
+- stateDiagram-v2 (state diagram)
+- erDiagram (ER diagram, automatically converted to class diagram format)
 
 ## Node Shapes
 - [text] rectangle
@@ -170,7 +204,7 @@ flowchart TD
 - {text} diamond
 - ((text)) circle
 
-## Example
+## Flowchart Example
 \`\`\`mermaid
 flowchart TD
     A[Start] --> B{Condition}
@@ -180,11 +214,41 @@ flowchart TD
     D --> E
 \`\`\`
 
+## State Diagram Example
+\`\`\`mermaid
+stateDiagram-v2
+    [*] --> Pending
+    Pending --> Processing: Start
+    Processing --> Completed: Success
+    Processing --> Failed: Error
+    Completed --> [*]
+    Failed --> Pending: Retry
+\`\`\`
+
+## ER Diagram Example
+\`\`\`mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    ORDER ||--|{ ORDER_ITEM : contains
+    PRODUCT ||--o{ ORDER_ITEM : includes
+    USER {
+        int id PK
+        string name
+        string email
+    }
+    ORDER {
+        int id PK
+        int user_id FK
+        date created_at
+    }
+\`\`\`
+
 ## Rules
 1. Output only Mermaid code block
 2. Use English labels
 3. Flowcharts default to TD (top to bottom)
-4. Do not add any explanations`,
+4. ER diagrams are automatically converted to class diagram format
+5. Do not add any explanations`,
 };
 
 /**
@@ -195,7 +259,7 @@ export function getMermaidSystemPrompt(lang?: Language): string {
   return MERMAID_SYSTEM_PROMPTS[language];
 }
 
-// 图表类型特定的提示
+// 图表类型特定的提示（JSON 模式 - 旧版保留）
 const DIAGRAM_TYPE_PROMPTS: Record<DiagramType, string> = {
   flowchart: `生成流程图。使用以下节点类型：
 - start: 开始节点（椭圆形）
@@ -232,8 +296,36 @@ const DIAGRAM_TYPE_PROMPTS: Record<DiagramType, string> = {
   generic: `生成通用图表。根据内容自动选择合适的节点类型和布局。`,
 };
 
+// Mermaid 图表类型提示
+const MERMAID_DIAGRAM_TYPE_PROMPTS: Record<DiagramType, string> = {
+  flowchart: `使用 Mermaid flowchart 语法生成流程图。
+使用 TD（从上到下）方向。节点形状：
+- ((文字)) 圆形 - 用于开始/结束
+- [文字] 矩形 - 用于处理步骤
+- {文字} 菱形 - 用于判断分支
+- [/文字/] 平行四边形 - 用于数据输入输出`,
+
+  architecture: `使用 Mermaid flowchart 语法生成架构图。
+可以使用 subgraph 来分组相关组件。`,
+
+  sequence: `使用 Mermaid sequenceDiagram 语法生成时序图。
+使用 participant 定义参与者，箭头表示消息传递。`,
+
+  mindmap: `使用 Mermaid flowchart LR（从左到右）语法生成思维导图结构。
+中心主题用 (()) 圆形，分支用 [] 矩形。`,
+
+  er: `使用 Mermaid erDiagram 语法生成 ER 图。
+定义实体的属性和实体间的关系。`,
+
+  class: `使用 Mermaid classDiagram 语法生成类图。
+定义类的属性、方法和类间关系。`,
+
+  generic: `根据内容自动选择最合适的 Mermaid 图表类型。
+优先使用 flowchart TD。`,
+};
+
 /**
- * 生成图表生成的 prompt
+ * 生成图表生成的 prompt（JSON 模式 - 旧版保留）
  */
 export function buildDiagramPrompt(
   userDescription: string,
@@ -247,6 +339,24 @@ export function buildDiagramPrompt(
 ${userDescription}
 
 请根据以上需求生成图表 JSON 数据。`;
+}
+
+/**
+ * 生成 Mermaid 模式的 prompt
+ * 用于指导 AI 直接返回 Mermaid 代码
+ */
+export function buildMermaidPrompt(
+  userDescription: string,
+  diagramType: DiagramType = "generic"
+): string {
+  const typePrompt = MERMAID_DIAGRAM_TYPE_PROMPTS[diagramType];
+
+  return `${typePrompt}
+
+用户需求：
+${userDescription}
+
+请直接输出 Mermaid 代码块，不要添加任何解释。`;
 }
 
 /**
