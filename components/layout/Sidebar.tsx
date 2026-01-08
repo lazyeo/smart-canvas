@@ -2,22 +2,26 @@
 
 import React from "react";
 
+import { useTranslation } from "@/lib/i18n";
+
 interface SidebarProps {
     children?: React.ReactNode;
 }
 
 export function Sidebar({ children }: SidebarProps) {
+    const { t } = useTranslation();
+
     return (
         <aside className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4 gap-2">
-            <SidebarButton icon="pencil" title="绘图" active />
-            <SidebarButton icon="shapes" title="形状" />
-            <SidebarButton icon="arrow" title="连线" />
-            <SidebarButton icon="text" title="文本" />
+            <SidebarButton icon="pencil" title={t("sidebar.draw")} active />
+            <SidebarButton icon="shapes" title={t("sidebar.shapes")} />
+            <SidebarButton icon="arrow" title={t("sidebar.arrow")} />
+            <SidebarButton icon="text" title={t("sidebar.text")} />
 
             <div className="flex-1" />
 
-            <SidebarButton icon="history" title="历史" />
-            <SidebarButton icon="layers" title="图层" />
+            <SidebarButton icon="history" title={t("sidebar.history")} />
+            <SidebarButton icon="layers" title={t("sidebar.layers")} />
 
             {children}
         </aside>
@@ -87,8 +91,8 @@ function SidebarButton({ icon, title, active, onClick }: SidebarButtonProps) {
         <button
             onClick={onClick}
             className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${active
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-400 hover:text-white hover:bg-slate-700"
+                ? "bg-blue-600 text-white"
+                : "text-slate-400 hover:text-white hover:bg-slate-700"
                 }`}
             title={title}
         >

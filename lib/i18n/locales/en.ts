@@ -17,6 +17,7 @@ export const en = {
         close: "Close",
         settings: "Settings",
         help: "Help",
+        simpleVersion: "Simple",
     },
 
     // Welcome Guide
@@ -49,9 +50,11 @@ export const en = {
 
     // Header
     header: {
-        autoLayout: "Layout",
         engineExcalidraw: "Excalidraw",
         engineDrawio: "Draw.io",
+        autoLayout: "Layout",
+        generateNewVersion: "Generate New Version",
+        generatePro: "Generate Pro",
     },
 
     // Chat Panel

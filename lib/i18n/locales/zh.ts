@@ -17,6 +17,7 @@ export const zh = {
         close: "关闭",
         settings: "设置",
         help: "帮助",
+        simpleVersion: "简明版",
     },
 
     // 欢迎引导
@@ -49,9 +50,11 @@ export const zh = {
 
     // 头部
     header: {
-        autoLayout: "布局",
         engineExcalidraw: "Excalidraw",
         engineDrawio: "Draw.io",
+        autoLayout: "布局",
+        generateNewVersion: "生成新版本",
+        generatePro: "生成专业版",
     },
 
     // 聊天面板

@@ -4,16 +4,23 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac } from "crypto";
 
-// 每日使用记录（内存存储）
-// 注意：服务重启后会重置，生产环境可考虑使用 Redis/KV
-const usageMap = new Map<string, { count: number; date: string }>();
-
-// 从环境变量获取配置
+// 每日限制
+const RATE_LIMIT = parseInt(process.env.RATE_LIMIT_PER_DAY || "3", 10);
+// 系统配置
 const SYSTEM_API_KEY = process.env.SYSTEM_CLAUDE_API_KEY || "";
 const SYSTEM_BASE_URL = process.env.SYSTEM_CLAUDE_BASE_URL || "https://api.anthropic.com";
 const SYSTEM_MODEL = process.env.SYSTEM_CLAUDE_MODEL || "claude-sonnet-4-20250514";
-const RATE_LIMIT = parseInt(process.env.RATE_LIMIT_PER_DAY || "3", 10);
+
+// Cookie 配置
+const COOKIE_NAME = "sc_usage";
+const COOKIE_SECRET = SYSTEM_API_KEY || "fallback_secret_key_for_dev"; // 使用 API Key 作为签名密钥
+
+interface UsageData {
+    count: number;
+    date: string;
+}
 
 interface ChatMessage {
     role: "system" | "user" | "assistant";
@@ -28,53 +35,89 @@ interface ChatRequest {
 }
 
 /**
- * 获取用户标识符
- * 组合 IP 地址和设备指纹
+ * 生成签名
  */
-function getUserId(request: NextRequest, fingerprint: string): string {
-    // 获取真实 IP（考虑反向代理）
-    const forwardedFor = request.headers.get("x-forwarded-for");
-    const realIp = request.headers.get("x-real-ip");
-    const ip = forwardedFor?.split(",")[0]?.trim() || realIp || "unknown";
-
-    // 组合 IP 和指纹生成用户标识
-    return `${ip}_${fingerprint}`;
+function sign(data: string): string {
+    return createHmac("sha256", COOKIE_SECRET).update(data).digest("hex");
 }
 
 /**
- * 检查并更新使用次数
- * 返回是否允许继续使用
+ * 验证签名并解析数据
  */
-function checkAndUpdateUsage(userId: string): { allowed: boolean; remaining: number } {
-    const today = new Date().toISOString().split("T")[0];
-    const usage = usageMap.get(userId);
+function verifyAndParse(value: string): UsageData | null {
+    try {
+        const [data, signature] = value.split(".");
+        if (!data || !signature) return null;
 
-    if (!usage || usage.date !== today) {
-        // 新的一天或新用户
-        usageMap.set(userId, { count: 1, date: today });
-        return { allowed: true, remaining: RATE_LIMIT - 1 };
+        const expectedSignature = sign(data);
+        if (signature !== expectedSignature) return null;
+
+        const decoded = Buffer.from(data, "base64").toString();
+        return JSON.parse(decoded);
+    } catch {
+        return null;
     }
-
-    if (usage.count >= RATE_LIMIT) {
-        return { allowed: false, remaining: 0 };
-    }
-
-    usage.count++;
-    return { allowed: true, remaining: RATE_LIMIT - usage.count };
 }
 
 /**
- * 获取剩余使用次数（不消耗）
+ * 编码并签名数据
  */
-function getRemainingUsage(userId: string): number {
-    const today = new Date().toISOString().split("T")[0];
-    const usage = usageMap.get(userId);
+function encodeAndSign(usage: UsageData): string {
+    const json = JSON.stringify(usage);
+    const data = Buffer.from(json).toString("base64");
+    const signature = sign(data);
+    return `${data}.${signature}`;
+}
 
-    if (!usage || usage.date !== today) {
-        return RATE_LIMIT;
+/**
+ * 检查并更新使用次数 (基于 Cookie)
+ */
+function checkUsageFromCookie(request: NextRequest): { allowed: boolean; remaining: number; nextCookie: string } {
+    const today = new Date().toISOString().split("T")[0];
+    const cookieValue = request.cookies.get(COOKIE_NAME)?.value;
+
+    let usage: UsageData = { count: 0, date: today };
+
+    if (cookieValue) {
+        const parsed = verifyAndParse(cookieValue);
+        if (parsed && parsed.date === today) {
+            usage = parsed;
+        }
     }
 
-    return Math.max(0, RATE_LIMIT - usage.count);
+    const startCount = usage.count;
+
+    if (startCount >= RATE_LIMIT) {
+        return {
+            allowed: false,
+            remaining: 0,
+            nextCookie: encodeAndSign({ count: startCount, date: today })
+        };
+    }
+
+    const nextUsage = { count: startCount + 1, date: today };
+    return {
+        allowed: true,
+        remaining: RATE_LIMIT - nextUsage.count,
+        nextCookie: encodeAndSign(nextUsage)
+    };
+}
+
+/**
+ * 获取剩余次数 (只读)
+ */
+function getRemainingFromCookie(request: NextRequest): number {
+    const today = new Date().toISOString().split("T")[0];
+    const cookieValue = request.cookies.get(COOKIE_NAME)?.value;
+
+    if (cookieValue) {
+        const parsed = verifyAndParse(cookieValue);
+        if (parsed && parsed.date === today) {
+            return Math.max(0, RATE_LIMIT - parsed.count);
+        }
+    }
+
+    return RATE_LIMIT;
 }
 
 /**
@@ -125,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body: ChatRequest = await request.json();
-        const { messages, fingerprint = "unknown", temperature = 0.7, maxTokens = 4096 } = body;
+        const { messages, temperature = 0.7, maxTokens = 4096 } = body;
 
         if (!messages || messages.length === 0) {
             return NextResponse.json(
@@ -134,9 +177,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 获取用户标识并检查使用限制
-        const userId = getUserId(request, fingerprint);
-        const { allowed, remaining } = checkAndUpdateUsage(userId);
+        // 检查使用限制 (Cookie)
+        const { allowed, remaining, nextCookie } = checkUsageFromCookie(request);
 
         if (!allowed) {
             return NextResponse.json(
@@ -170,6 +212,9 @@ export async function POST(request: NextRequest) {
         headers.set("X-Remaining-Usage", String(remaining));
         headers.set("X-Rate-Limit", String(RATE_LIMIT));
 
+        // 设置 Cookie
+        headers.append("Set-Cookie", `${COOKIE_NAME}=${nextCookie}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`);
+
         // 直接转发上游的流式响应
         return new Response(response.body, {
             status: 200,
@@ -197,9 +242,7 @@ export async function GET(request: NextRequest) {
         });
     }
 
-    const fingerprint = request.nextUrl.searchParams.get("fingerprint") || "unknown";
-    const userId = getUserId(request, fingerprint);
-    const remaining = getRemainingUsage(userId);
+    const remaining = getRemainingFromCookie(request);
 
     return NextResponse.json({
         available: true,
