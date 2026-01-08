@@ -10,7 +10,6 @@ import {
     SelectionContext,
     generateExcalidrawElements,
 } from "@/lib/ai";
-import { getActiveApiKey } from "@/lib/storage";
 import { ShadowNode, ShadowEdge } from "@/types";
 import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
 
@@ -212,21 +211,6 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
             ...prev,
             { id: userMsgId, role: "user", content: userMessage },
         ]);
-
-        // 检查 API Key
-        const apiKey = getActiveApiKey();
-        if (!apiKey) {
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: `edit-msg-${Date.now()}`,
-                    role: "ai",
-                    content: "请先在设置中配置 API Key",
-                    status: "error",
-                },
-            ]);
-            return;
-        }
 
         // 添加 AI 消息占位
         const aiMsgId = `edit-msg-${Date.now() + 1}`;

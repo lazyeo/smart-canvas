@@ -23,7 +23,6 @@ import {
     historyToMessages,
     ConversationHistory,
 } from "@/lib/ai";
-import { getActiveApiKey } from "@/lib/storage";
 import { ShadowNode } from "@/types";
 
 interface DiagramNode {
@@ -344,21 +343,6 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             ...prev,
             { id: userMsgId, role: "user", content: userMessage, status: "success" },
         ]);
-
-        // 检查 API Key
-        const apiKey = getActiveApiKey();
-        if (!apiKey) {
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: `msg-${Date.now()}`,
-                    role: "ai",
-                    content: "请先在设置中配置 API Key",
-                    status: "error",
-                },
-            ]);
-            return;
-        }
 
         // 添加 AI 思考中消息
         const aiMsgId = `msg-${Date.now() + 1}`;
