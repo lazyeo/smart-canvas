@@ -10,6 +10,7 @@ import {
     SelectionContext,
     generateExcalidrawElements,
 } from "@/lib/ai";
+import { useTranslation } from "@/lib/i18n";
 import { ShadowNode, ShadowEdge } from "@/types";
 import { ExcalidrawElement } from "@/components/canvas/ExcalidrawWrapper";
 
@@ -133,6 +134,7 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const { updateScene, getElements, selectedElementIds } = useCanvas();
+    const { t } = useTranslation();
 
     // 服务实例
     const editServiceRef = useRef<IncrementalEditService | null>(null);
@@ -195,7 +197,7 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
                 {
                     id: `edit-msg-${Date.now()}`,
                     role: "ai",
-                    content: "无法执行操作：当前未选中任何节点，请先选中需要修改的节点",
+                    content: t("editMode.noSelection"),
                     status: "error",
                 },
             ]);
@@ -216,7 +218,7 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
         const aiMsgId = `edit-msg-${Date.now() + 1}`;
         setMessages((prev) => [
             ...prev,
-            { id: aiMsgId, role: "ai", content: "正在分析...", status: "streaming" },
+            { id: aiMsgId, role: "ai", content: t("editMode.analyzing"), status: "streaming" },
         ]);
         setIsLoading(true);
         setEstimatedTokens(0);
@@ -589,11 +591,11 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
             {/* 头部 */}
             <div className="p-3 border-b border-slate-700 flex items-center justify-between">
                 <div>
-                    <h3 className="text-sm font-medium text-white">增量编辑模式</h3>
+                    <h3 className="text-sm font-medium text-white">{t("editMode.title")}</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
                         {hasSelection
-                            ? `已选中 ${selectedElementIds.length} 个元素`
-                            : "请先选中要编辑的元素"}
+                            ? t("editMode.elementsSelected", { count: selectedElementIds.length })
+                            : t("editMode.selectElementsFirst")}
                     </p>
                 </div>
                 <button
@@ -634,8 +636,8 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
                 {messages.length === 0 ? (
                     <div className="text-center py-6 text-slate-500 text-sm">
                         {hasSelection
-                            ? '输入编辑指令，如"修改文字为XXX"、"删除这个"'
-                            : "选中画布上的元素后开始编辑"}
+                            ? t("editMode.hint")
+                            : t("editMode.hintNoSelection")}
                     </div>
                 ) : (
                     <>
@@ -698,7 +700,7 @@ export function EditModePanel({ isVisible, onClose }: EditModePanelProps) {
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder={hasSelection ? "输入编辑指令..." : "请先选中元素"}
+                        placeholder={hasSelection ? t("editMode.placeholder") : t("editMode.placeholderNoSelection")}
                         disabled={isLoading}
                         className="flex-1 bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:border-blue-500 placeholder-slate-500 disabled:opacity-50"
                     />

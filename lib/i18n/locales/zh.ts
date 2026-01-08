@@ -208,6 +208,64 @@ flowchart TD
 3. 流程图默认用 TD（从上到下）
 4. 不要添加任何解释`,
     },
+
+    // 侧边栏
+    sidebar: {
+        draw: "绘图",
+        shapes: "形状",
+        arrow: "连线",
+        text: "文本",
+        history: "历史",
+        layers: "图层",
+    },
+
+    // 编辑模式面板
+    editMode: {
+        title: "增量编辑模式",
+        elementsSelected: "已选中 {count} 个元素",
+        selectElementsFirst: "请先选中要编辑的元素",
+        analyzing: "正在分析...",
+        analyzingTokens: "正在分析... (~{tokens} tokens)",
+        analyzingAll: "正在分析全部节点... (~{tokens} tokens)",
+        noSelection: "无法执行操作：当前未选中任何节点，请先选中需要修改的节点",
+        noElements: "画布上没有可修改的元素",
+        operationFailed: "操作失败",
+        editFailed: "编辑失败",
+        globalEditFailed: "全局编辑失败",
+        placeholder: "输入编辑指令...",
+        placeholderNoSelection: "请先选中元素",
+        hint: "输入编辑指令，如\"修改文字为XXX\"、\"删除这个\"",
+        hintNoSelection: "选中画布上的元素后开始编辑",
+        node: "节点",
+        newNode: "新节点",
+        none: "无",
+    },
+
+    // 聊天建议
+    suggestions: {
+        loginFlow: "画一个用户登录流程图",
+        microservices: "创建一个微服务架构图",
+        erDiagram: "设计一个用户管理系统ER图",
+    },
+
+    // 头部额外
+    headerExtra: {
+        myFiles: "我的文件",
+        proVersion: "专业版",
+        clearChat: "清空对话",
+        describePrompt: "描述您想要的图表，AI 将为您生成",
+    },
+
+    // 提示
+    alerts: {
+        noProData: "暂无专业版数据，请先生成专业版",
+        openFileFirst: "请先打开或创建文件",
+    },
+
+    // 生成结果
+    results: {
+        generatedMermaid: "已生成 {nodes} 个节点和 {edges} 条连线 (Mermaid)",
+    },
 };
 
 export type TranslationKeys = typeof zh;

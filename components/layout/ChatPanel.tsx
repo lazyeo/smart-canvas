@@ -23,6 +23,7 @@ import {
     historyToMessages,
     ConversationHistory,
 } from "@/lib/ai";
+import { useTranslation } from "@/lib/i18n";
 import { ShadowNode } from "@/types";
 
 interface DiagramNode {
@@ -63,6 +64,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
     const { updateScene, getElements, selectedElementIds } = useCanvas();
     const { setDrawioXml } = useEngine();
     const { autoSave, currentFile, saveChatHistory } = useFile();
+    const { t } = useTranslation();
 
     // 对话历史管理
     const conversationHistoryRef = useRef<ConversationHistory>(createConversationHistory());
@@ -348,7 +350,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
         const aiMsgId = `msg-${Date.now() + 1}`;
         setMessages((prev) => [
             ...prev,
-            { id: aiMsgId, role: "ai", content: "正在思考...", status: "streaming" },
+            { id: aiMsgId, role: "ai", content: t("chat.thinking"), status: "streaming" },
         ]);
         setIsLoading(true);
         setStreamingContent("");
@@ -394,7 +396,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             if (textEl?.text) return textEl.text;
         }
 
-        return "节点";
+        return t("editMode.node");
     };
 
     // 编辑模式处理
@@ -460,7 +462,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                     msg.id === aiMsgId
                         ? {
                             ...msg,
-                            content: result.error || "编辑失败",
+                            content: result.error || t("chat.error.editFailed"),
                             status: "error",
                         }
                         : msg
@@ -488,7 +490,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === aiMsgId
-                        ? { ...msg, content: "画布上没有可修改的元素", status: "error" }
+                        ? { ...msg, content: t("editMode.noElements"), status: "error" }
                         : msg
                 )
             );
@@ -555,7 +557,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === aiMsgId
-                        ? { ...msg, content: result.error || "全局编辑失败", status: "error" }
+                        ? { ...msg, content: result.error || t("editMode.globalEditFailed"), status: "error" }
                         : msg
                 )
             );
@@ -1366,7 +1368,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                                 msg.id === aiMsgId
                                     ? {
                                         ...msg,
-                                        content: "无法解析 AI 返回的图表数据",
+                                        content: t("chat.error.parseFailed"),
                                         status: "error",
                                         isThinkingExpanded: false,
                                     }
@@ -1417,7 +1419,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         <button
                             onClick={handleClearConversation}
                             className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
-                            title="清空对话"
+                            title={t("headerExtra.clearChat")}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1433,7 +1435,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                 <p className="text-xs text-slate-400 mt-1">
                     {selectionInfo
                         ? `已选中 ${selectionInfo.count} 个元素，新内容将添加到其右侧`
-                        : "描述您想要的图表，AI 将为您生成"}
+                        : t("headerExtra.describePrompt")}
                 </p>
             </div>
 
@@ -1457,9 +1459,9 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                             开始对话，描述您想要绘制的图表
                         </p>
                         <div className="mt-4 space-y-2">
-                            <SuggestionButton text="画一个用户登录流程图" onClick={handleSuggestionClick} />
-                            <SuggestionButton text="创建一个微服务架构图" onClick={handleSuggestionClick} />
-                            <SuggestionButton text="设计一个用户管理系统ER图" onClick={handleSuggestionClick} />
+                            <SuggestionButton text={t("suggestions.loginFlow")} onClick={handleSuggestionClick} />
+                            <SuggestionButton text={t("suggestions.microservices")} onClick={handleSuggestionClick} />
+                            <SuggestionButton text={t("suggestions.erDiagram")} onClick={handleSuggestionClick} />
                         </div>
                     </div>
                 ) : (
@@ -1533,7 +1535,7 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="描述您想要的图表..."
+                        placeholder={t("chat.placeholder")}
                         disabled={isLoading}
                         className="flex-1 bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:border-blue-500 placeholder-slate-500 disabled:opacity-50"
                     />

@@ -208,4 +208,62 @@ flowchart TD
 3. Flowcharts default to TD (top to bottom)
 4. Do not add any explanations`,
     },
+
+    // Sidebar
+    sidebar: {
+        draw: "Draw",
+        shapes: "Shapes",
+        arrow: "Arrow",
+        text: "Text",
+        history: "History",
+        layers: "Layers",
+    },
+
+    // Edit Mode Panel
+    editMode: {
+        title: "Incremental Edit Mode",
+        elementsSelected: "{count} element(s) selected",
+        selectElementsFirst: "Select elements to edit first",
+        analyzing: "Analyzing...",
+        analyzingTokens: "Analyzing... (~{tokens} tokens)",
+        analyzingAll: "Analyzing all nodes... (~{tokens} tokens)",
+        noSelection: "Cannot execute: No nodes selected. Please select nodes to modify first.",
+        noElements: "No elements on canvas to modify",
+        operationFailed: "Operation failed",
+        editFailed: "Edit failed",
+        globalEditFailed: "Global edit failed",
+        placeholder: "Enter edit command...",
+        placeholderNoSelection: "Select elements first",
+        hint: "Enter commands like \"change text to XXX\", \"delete this\"",
+        hintNoSelection: "Select elements on canvas to start editing",
+        node: "Node",
+        newNode: "New Node",
+        none: "None",
+    },
+
+    // Chat suggestions
+    suggestions: {
+        loginFlow: "Draw a user login flowchart",
+        microservices: "Create a microservices architecture diagram",
+        erDiagram: "Design a user management ER diagram",
+    },
+
+    // Header extras
+    headerExtra: {
+        myFiles: "My Files",
+        proVersion: "Pro",
+        clearChat: "Clear Chat",
+        describePrompt: "Describe your diagram, AI will generate it for you",
+    },
+
+    // Alerts
+    alerts: {
+        noProData: "No pro data available, please generate pro version first",
+        openFileFirst: "Please open or create a file first",
+    },
+
+    // Generated results
+    results: {
+        generatedMermaid: "Generated {nodes} nodes and {edges} edges (Mermaid)",
+    },
 };
