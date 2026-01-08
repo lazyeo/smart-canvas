@@ -44,6 +44,7 @@ export const en = {
         paste: "Paste",
         dontShowAgain: "Don't show again",
         getStarted: "Get Started",
+        freeTrial: "Free trial: {limit} AI requests per day. Configure your own API Key for unlimited use.",
     },
 
     // Header

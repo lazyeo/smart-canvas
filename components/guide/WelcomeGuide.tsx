@@ -11,6 +11,7 @@ interface WelcomeGuideProps {
 
 export function WelcomeGuide({ onClose }: WelcomeGuideProps) {
     const [isVisible, setIsVisible] = useState(false);
+    const [rateLimit, setRateLimit] = useState(3);
     const { t } = useTranslation();
 
     useEffect(() => {
@@ -18,6 +19,18 @@ export function WelcomeGuide({ onClose }: WelcomeGuideProps) {
         if (!dismissed) {
             setIsVisible(true);
         }
+
+        // 获取限制次数
+        fetch("/api/config")
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.rateLimit) {
+                    setRateLimit(data.rateLimit);
+                }
+            })
+            .catch(() => {
+                // 使用默认值
+            });
     }, []);
 
     const handleClose = () => {
@@ -80,6 +93,18 @@ export function WelcomeGuide({ onClose }: WelcomeGuideProps) {
                         title={t("welcome.features.autoLayout.title")}
                         description={t("welcome.features.autoLayout.description")}
                     />
+
+                    {/* Free Trial Notice */}
+                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                            <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="text-sm text-amber-200">
+                                {t("welcome.freeTrial", { limit: rateLimit })}
+                            </p>
+                        </div>
+                    </div>
 
                     <div className="bg-slate-900/50 rounded-lg p-3">
                         <h4 className="text-sm font-medium text-slate-300 mb-2">{t("welcome.shortcuts")}</h4>

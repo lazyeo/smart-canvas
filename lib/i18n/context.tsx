@@ -62,7 +62,7 @@ function interpolate(template: string, params?: Record<string, string | number>)
  * I18n Provider
  */
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-    const [language, setLanguageState] = useState<Language>("zh");
+    const [language, setLanguageState] = useState<Language>("en");
 
     // 初始化时从 localStorage 读取
     useEffect(() => {
@@ -125,7 +125,7 @@ export function useTranslation() {
  * 获取当前语言（不在组件中使用）
  */
 export function getCurrentLanguage(): Language {
-    if (typeof window === "undefined") return "zh";
+    if (typeof window === "undefined") return "en";
     const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY) as Language | null;
-    return saved || "zh";
+    return saved || "en";
 }

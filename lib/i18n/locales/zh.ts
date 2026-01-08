@@ -44,6 +44,7 @@ export const zh = {
         paste: "粘贴",
         dontShowAgain: "不再显示",
         getStarted: "开始使用",
+        freeTrial: "免费试用：每天 {limit} 次 AI 请求。配置您自己的 API Key 可无限使用。",
     },
 
     // 头部
