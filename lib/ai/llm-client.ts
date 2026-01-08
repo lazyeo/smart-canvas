@@ -4,6 +4,7 @@
  */
 
 import { getActiveApiKey, LLMProvider } from "@/lib/storage";
+import { getFingerprint } from "@/lib/utils/fingerprint";
 
 export interface LLMMessage {
     role: "system" | "user" | "assistant";
@@ -423,7 +424,135 @@ async function callGemini(
 }
 
 /**
+ * 通过系统 API 代理进行流式调用（带限流）
+ */
+async function streamSystemApi(
+    messages: LLMMessage[],
+    options: LLMOptions,
+    callbacks: StreamCallbacks
+): Promise<void> {
+    const fingerprint = getFingerprint();
+
+    const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            messages,
+            fingerprint,
+            temperature: options.temperature ?? 0.7,
+            maxTokens: options.maxTokens ?? 4096,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "请求失败" }));
+        if (response.status === 429) {
+            throw new Error(errorData.error || "今日免费试用次数已用完，请配置您自己的 API Key");
+        }
+        throw new Error(errorData.error || `系统 API 错误: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let accumulated = "";
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.type === "content_block_delta") {
+                            const content = parsed.delta?.text || "";
+                            if (content) {
+                                accumulated += content;
+                                callbacks.onToken(content, accumulated);
+                            }
+                        }
+                    } catch {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+        callbacks.onComplete(accumulated);
+    } catch (error) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+/**
+ * 通过系统 API 代理进行非流式调用（带限流）
+ */
+async function callSystemApi(
+    messages: LLMMessage[],
+    options: LLMOptions
+): Promise<LLMResponse> {
+    const fingerprint = getFingerprint();
+
+    // 先检查是否有剩余次数
+    const checkResponse = await fetch(`/api/chat?fingerprint=${fingerprint}`);
+    const checkData = await checkResponse.json();
+
+    if (!checkData.available) {
+        throw new Error("系统试用 API 未配置，请配置您自己的 API Key");
+    }
+
+    if (checkData.remaining <= 0) {
+        throw new Error(`今日免费试用次数已用完（${checkData.limit}次/天），请配置您自己的 API Key`);
+    }
+
+    // 调用流式 API 并收集完整响应
+    return new Promise((resolve, reject) => {
+        let fullContent = "";
+
+        streamSystemApi(messages, options, {
+            onToken: (_, accumulated) => {
+                fullContent = accumulated;
+            },
+            onComplete: (content) => {
+                resolve({ content });
+            },
+            onError: (error) => {
+                reject(error);
+            },
+        });
+    });
+}
+
+/**
+ * 检查系统 API 是否可用及剩余次数
+ */
+export async function checkSystemApiStatus(): Promise<{
+    available: boolean;
+    remaining: number;
+    limit: number;
+}> {
+    try {
+        const fingerprint = getFingerprint();
+        const response = await fetch(`/api/chat?fingerprint=${fingerprint}`);
+        return await response.json();
+    } catch {
+        return { available: false, remaining: 0, limit: 0 };
+    }
+}
+
+/**
  * 统一的流式 LLM 调用接口
+ * 当用户未配置 API Key 时，自动使用系统代理（带限流）
  */
 export async function chatStream(
     messages: LLMMessage[],
@@ -431,8 +560,14 @@ export async function chatStream(
     options: LLMOptions = {}
 ): Promise<void> {
     const activeKey = getActiveApiKey();
+
+    // 如果用户没有配置 API Key，使用系统 API
     if (!activeKey) {
-        callbacks.onError(new Error("未配置 API Key，请在设置中添加"));
+        try {
+            await streamSystemApi(messages, options, callbacks);
+        } catch (error) {
+            callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+        }
         return;
     }
 
@@ -457,14 +592,17 @@ export async function chatStream(
 
 /**
  * 统一的非流式 LLM 调用接口
+ * 当用户未配置 API Key 时，自动使用系统代理（带限流）
  */
 export async function chat(
     messages: LLMMessage[],
     options: LLMOptions = {}
 ): Promise<LLMResponse> {
     const activeKey = getActiveApiKey();
+
+    // 如果用户没有配置 API Key，使用系统 API
     if (!activeKey) {
-        throw new Error("未配置 API Key，请在设置中添加");
+        return callSystemApi(messages, options);
     }
 
     const { provider, key, baseUrl, model } = activeKey;
